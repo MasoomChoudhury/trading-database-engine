@@ -33,7 +33,8 @@ def check_db_health():
 @router.get("/health", response_class=HTMLResponse)
 async def health_check(request: Request):
     # Fetch system metrics
-    cpu_usage = psutil.cpu_percent()
+    # Using 0.1s interval to get a real reading, otherwise first call is often 0 or 100
+    cpu_usage = psutil.cpu_percent(interval=0.1)
     ram_usage = psutil.virtual_memory().percent
     
     # Real health status

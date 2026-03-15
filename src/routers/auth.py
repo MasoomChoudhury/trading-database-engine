@@ -31,6 +31,15 @@ async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/auth/login")
 
+@router.get("/login-upstox")
+async def login_upstox():
+    """Initiates the Upstox OAuth flow by redirecting to their login dialog."""
+    api_key = os.getenv("UPSTOX_API_KEY")
+    redirect_uri = os.getenv("UPSTOX_REDIRECT_URI")
+    # Base URL for Upstox OAuth
+    url = f"https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id={api_key}&redirect_uri={redirect_uri}"
+    return RedirectResponse(url=url)
+
 @router.get("/upstox-callback")
 async def upstox_callback(request: Request, code: str = None):
     if not code:
