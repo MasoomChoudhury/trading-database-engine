@@ -243,7 +243,7 @@ sudo ufw status
 *You should only see 22 (SSH), 80 (HTTP), and 443 (HTTPS) in the 'ALLOW' column.*
 
 ### 3. Security Auditing Checklist
-- [ ] **Strong Passwords**: Ensure `POSTGRES_PASSWORD` and `ADMIN_PASSWORD` in your `.env` are at least 32 random characters.
+- [ ] **Strong Passwords**: Ensure `TIMESCALEDB_PASSWORD` and `ADMIN_PASSWORD` in your `.env` are at least 32 random characters.
 - [ ] **No SSH Backdoors**: Run `cat /root/.ssh/authorized_keys` to ensure no unknown keys are listed.
 - [ ] **Local Binding**: Ensure `docker-compose.yml` has `127.0.0.1:5432:5432` to prevent the DB from listening on the public IP.
 
