@@ -66,10 +66,18 @@ fi
 
 # 7. Project Initialization
 echo "📂 Setting up Python Virtual Environment..."
-if [ ! -d "venv" ]; then
-    python3 -m venv venv
+# If venv directory exists but is missing the activation script, it's corrupt.
+if [ -d "venv" ] && [ ! -f "venv/bin/activate" ]; then
+    echo "⚠️  Detected broken virtual environment. Rebuilding..."
+    rm -rf venv
 fi
-source venv/bin/activate
+
+if [ ! -d "venv" ]; then
+    python3 -m venv venv || { echo "❌ Failed to create venv. Is 'python3-venv' installed?"; exit 1; }
+fi
+
+# Use absolute path for source for maximum compatibility
+source "$(pwd)/venv/bin/activate"
 echo "📥 Installing requirements..."
 pip install --upgrade pip
 pip install -r requirements.txt
