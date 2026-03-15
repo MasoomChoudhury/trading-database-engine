@@ -214,6 +214,41 @@ sudo certbot --nginx -d database.masoomchoudhury.com
 
 ---
 
+## 🔐 Security & Firewall (CRITICAL)
+
+To prevent future malware infections (like the one we just removed), you **must** configure your VPS firewall to block all ports except those absolutely necessary.
+
+### 1. Configure UFW (Uncomplicated Firewall)
+Run these commands on your VPS:
+```bash
+# Allow SSH so you don't get locked out!
+sudo ufw allow ssh
+
+# Allow Web Traffic
+sudo ufw allow 80
+sudo ufw allow 443
+
+# Deny Database Port to Public (Implicitly denied by default, but let's be explicit)
+sudo ufw deny 5432
+
+# Enable Firewall
+sudo ufw enable
+```
+
+### 2. Verify Port Lockdown
+After running the above, run this to see your active rules:
+```bash
+sudo ufw status
+```
+*You should only see 22 (SSH), 80 (HTTP), and 443 (HTTPS) in the 'ALLOW' column.*
+
+### 3. Security Auditing Checklist
+- [ ] **Strong Passwords**: Ensure `POSTGRES_PASSWORD` and `ADMIN_PASSWORD` in your `.env` are at least 32 random characters.
+- [ ] **No SSH Backdoors**: Run `cat /root/.ssh/authorized_keys` to ensure no unknown keys are listed.
+- [ ] **Local Binding**: Ensure `docker-compose.yml` has `127.0.0.1:5432:5432` to prevent the DB from listening on the public IP.
+
+---
+
 ## 5. Monitoring & Maintenance
 
 - **View Logs**: `pm2 logs db-engine`
