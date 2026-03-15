@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Nifty Data Engine Admin{% endblock %}</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- Alpine JS -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- TradingView Lightweight Charts -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    
+    <style>
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-[#0f172a] text-slate-200 min-h-screen font-sans">
+    
+    <nav class="border-b border-slate-800 p-4 mb-8 bg-[#1e293b]/50 backdrop-blur-sm sticky top-0 z-50">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white">N</div>
+                <h1 class="text-xl font-bold tracking-tight text-white hover:text-blue-400 transition-colors">Data Engine <span class="text-blue-500">v2</span></h1>
+            </div>
+            {% if request.session.user %}
+            <div class="flex items-center space-x-6">
+                <span class="text-sm text-slate-400">Welcome, <span class="text-slate-200 font-medium">{{ request.session.user }}</span></span>
+                <a href="/auth/logout" class="text-xs uppercase tracking-widest bg-slate-800 hover:bg-red-900/40 hover:text-red-400 border border-slate-700 px-3 py-1.5 rounded-md transition-all">Logout</a>
+            </div>
+            {% endif %}
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 pb-20">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Upstox API
+
+# Data Processing
+pandas
+pandas-ta
+numpy
+scipy # For Black-Scholes calculation if needed
+
+# Database connections
+psycopg2-binary
+sqlalchemy
+supabase
+
+# Scheduling & Utilities
+schedule
+python-dotenv
+requests
+asyncio # If fetching concurrently
+websockets # If tick data is needed later
+
+# Web Interface
+fastapi
+uvicorn
+jinja2
+python-multipart
+psutil
+itsdangerous

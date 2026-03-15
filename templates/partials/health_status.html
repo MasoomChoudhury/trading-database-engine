@@ -1,0 +1,43 @@
+<div class="bg-[#1e293b] p-4 rounded-xl border border-slate-700 flex flex-col justify-between shadow-lg">
+    <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">CPU Load</span>
+    <div class="flex items-center justify-between">
+        <span class="text-xl font-mono font-bold">{{ cpu }}%</span>
+        <div class="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div class="h-full {% if cpu > 80 %}bg-red-500{% elif cpu > 50 %}bg-yellow-500{% else %}bg-green-500{% endif %}"
+                style="width: {{ cpu }}%"></div>
+        </div>
+    </div>
+</div>
+
+<div class="bg-[#1e293b] p-4 rounded-xl border border-slate-700 flex flex-col justify-between shadow-lg">
+    <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">RAM Usage</span>
+    <div class="flex items-center justify-between">
+        <span class="text-xl font-mono font-bold">{{ ram }}%</span>
+        <div class="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div class="h-full {% if ram > 80 %}bg-red-500{% elif ram > 50 %}bg-yellow-500{% else %}bg-green-500{% endif %}"
+                style="width: {{ ram }}%"></div>
+        </div>
+    </div>
+</div>
+
+<div class="bg-[#1e293b] p-4 rounded-xl border border-slate-700 flex flex-col justify-between shadow-lg">
+    <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Upstox API</span>
+    <div class="flex items-center justify-between">
+        <span class="text-sm font-bold {% if upstox == 'Healthy' %}text-green-400{% else %}text-red-400{% endif %}">{{
+            upstox }}</span>
+        <div
+            class="w-2 h-2 rounded-full {% if upstox == 'Healthy' %}bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]{% else %}bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]{% endif %}">
+        </div>
+    </div>
+</div>
+
+<div class="bg-[#1e293b] p-4 rounded-xl border border-slate-700 flex flex-col justify-between shadow-lg">
+    <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">DB Connection</span>
+    <div class="flex items-center justify-between">
+        <span class="text-sm font-bold {% if db == 'Connected' %}text-blue-400{% else %}text-red-400{% endif %}">{{ db
+            }}</span>
+        <div
+            class="w-2 h-2 rounded-full {% if db == 'Connected' %}bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]{% else %}bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]{% endif %}">
+        </div>
+    </div>
+</div>
