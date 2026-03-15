@@ -116,6 +116,32 @@
                 </div>
             </div>
         </section>
+
+        <!-- Environment Configuration Section -->
+        <section class="bg-[#1e293b] rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
+            <div class="bg-slate-800/50 p-4 border-b border-slate-700 flex justify-between items-center">
+                <h3 class="font-bold flex items-center space-x-2">
+                    <span class="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                    <span>Environment Configuration</span>
+                </h3>
+                <div id="config-status"></div>
+            </div>
+            <div class="p-6">
+                <p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-4">Edit .env file directly
+                </p>
+                <form hx-post="/admin/config" hx-target="#config-status" class="space-y-4">
+                    <textarea name="config_content" hx-get="/admin/config" hx-trigger="load"
+                        class="w-full h-64 bg-[#0f172a] border border-slate-700 rounded-xl p-4 text-xs font-mono text-blue-300 focus:ring-1 focus:ring-yellow-500 outline-none scrollbar-thin scrollbar-thumb-slate-700"
+                        spellcheck="false"></textarea>
+                    <button type="submit"
+                        class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-2 rounded-lg transition-colors text-xs">
+                        Save Changes & Apply
+                    </button>
+                    <p class="text-[9px] text-slate-500 italic text-center">* Restart services via PM2 to fully apply
+                        certain changes.</p>
+                </form>
+            </div>
+        </section>
     </div>
 
     <!-- Right Column: Charting & Observability -->

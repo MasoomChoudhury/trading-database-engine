@@ -76,3 +76,44 @@ async def update_code(request: Request, user: str = Depends(get_current_user)):
             """)
     except Exception as e:
         return HTMLResponse(f"<div class='text-red-400 text-xs'>Error: {str(e)}</div>")
+
+@router.get("/config", response_class=HTMLResponse)
+async def get_config(request: Request, user: str = Depends(get_current_user)):
+    if not user:
+        return HTMLResponse("Unauthorized", status_code=401)
+    
+    try:
+        content = ""
+        if os.path.exists(".env"):
+            with open(".env", "r") as f:
+                content = f.read()
+        return HTMLResponse(content)
+    except Exception as e:
+        return HTMLResponse(f"Error reading .env: {str(e)}")
+
+@router.post("/config", response_class=HTMLResponse)
+async def save_config(request: Request, user: str = Depends(get_current_user)):
+    if not user:
+        return HTMLResponse("Unauthorized", status_code=401)
+    
+    try:
+        form_data = await request.form()
+        content = form_data.get("config_content")
+        
+        if content is None:
+            return HTMLResponse("<span class='text-red-400 text-xs'>No content provided</span>")
+        
+        # Save to .env
+        with open(".env", "w") as f:
+            f.write(content)
+            
+        return HTMLResponse(f"""
+            <div class="flex items-center space-x-2 text-green-400 animate-pulse">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span class="text-xs font-bold">Successfully saved to .env</span>
+            </div>
+        """)
+    except Exception as e:
+        return HTMLResponse(f"<span class='text-red-400 text-xs'>Error saving: {str(e)}</span>")
