@@ -149,7 +149,7 @@ If you installed manually, you can launch the dashboard as follows:
 
 ## 🌐 Domain & SSL Setup (Production)
 
-To use `https://www.database.masoomchoudhury.com` with your VPS (IP: `94.136.186.15`), follow these steps:
+To use `https://database.masoomchoudhury.com` with your VPS (IP: `94.136.186.15`), follow these steps:
 
 ### 0. Supabase SQL Setup (Required)
 Before running the engine, you **must** create the configuration table in your Supabase project. 
@@ -162,18 +162,20 @@ CREATE TABLE IF NOT EXISTS public.app_config (
     updated_at timestamptz DEFAULT now()
 );
 
--- Note: Ensure your Supabase Key is either a 'service_role' key or 
--- you enable RLS policies to allow access to this table.
+-- This allows your API key to talk to this table
+ALTER TABLE public.app_config ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all access" ON public.app_config;
+CREATE POLICY "Allow all access" ON public.app_config FOR ALL USING (true);
 ```
 
 ### 1. Initial Login & Clone
 In your domain registrar (GoDaddy, Namecheap, etc.), add an **A Record**:
-- **Name**: `www.database` (or `@` if you want the root)
+- **Name**: `database`
 - **Value**: `94.136.186.15`
 
 ### 2. Upstox Dashboard Update
 Login to [Upstox Developer Console](https://developer.upstox.com/) and change your **Redirect URL** to:
-`https://www.database.masoomchoudhury.com/auth/upstox-callback`
+`https://database.masoomchoudhury.com/auth/upstox-callback`
 
 ### 3. Nginx Reverse Proxy
 Install Nginx and configure it to point to FastAPI:
@@ -185,18 +187,21 @@ Paste this config:
 ```nginx
 server {
     listen 80;
-    server_name www.database.masoomchoudhury.com;
+    server_name database.masoomchoudhury.com;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 Enable and restart:
 ```bash
 sudo ln -s /etc/nginx/sites-available/trading-engine /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/default
 sudo nginx -t
 sudo systemctl restart nginx
 ```
@@ -204,7 +209,7 @@ sudo systemctl restart nginx
 ### 4. Install SSL (Let's Encrypt)
 ```bash
 sudo apt install certbot python3-certbot-nginx -y
-sudo certbot --nginx -d www.database.masoomchoudhury.com
+sudo certbot --nginx -d database.masoomchoudhury.com
 ```
 
 ---
