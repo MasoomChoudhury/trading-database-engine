@@ -1,5 +1,6 @@
 import psutil
 import requests
+import subprocess
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -46,3 +47,31 @@ async def health_check(request: Request):
         "upstox": upstox_status,
         "db": db_status
     })
+
+@router.post("/update", response_class=HTMLResponse)
+async def update_code(request: Request, user: str = Depends(get_current_user)):
+    if not user:
+        return HTMLResponse("<span class='text-red-400'>Unauthorized</span>", status_code=401)
+    
+    try:
+        # Run git pull
+        result = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True, timeout=30)
+        output = result.stdout + result.stderr
+        
+        if result.returncode == 0:
+            return HTMLResponse(f"""
+                <div class="bg-green-900/30 border border-green-500/50 p-3 rounded-lg animate-pulse">
+                    <p class="text-xs font-bold text-green-400">✅ Git Pull Successful</p>
+                    <pre class="text-[10px] text-green-200/70 mt-1 font-mono">{output}</pre>
+                    <p class="text-[10px] text-green-400/50 mt-2 italic">* Restart PM2 services to apply changes.</p>
+                </div>
+            """)
+        else:
+            return HTMLResponse(f"""
+                <div class="bg-red-900/30 border border-red-500/50 p-3 rounded-lg">
+                    <p class="text-xs font-bold text-red-400">❌ Git Pull Failed</p>
+                    <pre class="text-[10px] text-red-200/70 mt-1 font-mono">{output}</pre>
+                </div>
+            """)
+    except Exception as e:
+        return HTMLResponse(f"<div class='text-red-400 text-xs'>Error: {str(e)}</div>")
