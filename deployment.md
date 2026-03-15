@@ -147,6 +147,53 @@ If you installed manually, you can launch the dashboard as follows:
 
 ---
 
+## 🌐 Domain & SSL Setup (Production)
+
+To use `https://www.database.masoomchoudhury.com` with your VPS (IP: `94.136.186.15`), follow these steps:
+
+### 1. DNS Configuration
+In your domain registrar (GoDaddy, Namecheap, etc.), add an **A Record**:
+- **Name**: `www.database` (or `@` if you want the root)
+- **Value**: `94.136.186.15`
+
+### 2. Upstox Dashboard Update
+Login to [Upstox Developer Console](https://developer.upstox.com/) and change your **Redirect URL** to:
+`https://www.database.masoomchoudhury.com/auth/upstox-callback`
+
+### 3. Nginx Reverse Proxy
+Install Nginx and configure it to point to FastAPI:
+```bash
+sudo apt install nginx -y
+sudo nano /etc/nginx/sites-available/trading-engine
+```
+Paste this config:
+```nginx
+server {
+    listen 80;
+    server_name www.database.masoomchoudhury.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+Enable and restart:
+```bash
+sudo ln -s /etc/nginx/sites-available/trading-engine /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+### 4. Install SSL (Let's Encrypt)
+```bash
+sudo apt install certbot python3-certbot-nginx -y
+sudo certbot --nginx -d www.database.masoomchoudhury.com
+```
+
+---
+
 ## 5. Monitoring & Maintenance
 
 - **View Logs**: `pm2 logs db-engine`
