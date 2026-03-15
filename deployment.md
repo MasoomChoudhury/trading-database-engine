@@ -151,7 +151,22 @@ If you installed manually, you can launch the dashboard as follows:
 
 To use `https://www.database.masoomchoudhury.com` with your VPS (IP: `94.136.186.15`), follow these steps:
 
-### 1. DNS Configuration
+### 0. Supabase SQL Setup (Required)
+Before running the engine, you **must** create the configuration table in your Supabase project. 
+Go to your **Supabase Dashboard** -> **SQL Editor** -> **New Query** and run:
+
+```sql
+CREATE TABLE IF NOT EXISTS public.app_config (
+    key text PRIMARY KEY,
+    value text,
+    updated_at timestamptz DEFAULT now()
+);
+
+-- Note: Ensure your Supabase Key is either a 'service_role' key or 
+-- you enable RLS policies to allow access to this table.
+```
+
+### 1. Initial Login & Clone
 In your domain registrar (GoDaddy, Namecheap, etc.), add an **A Record**:
 - **Name**: `www.database` (or `@` if you want the root)
 - **Value**: `94.136.186.15`
