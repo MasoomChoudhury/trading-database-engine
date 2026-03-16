@@ -1,4 +1,6 @@
 # Upstox API
+upstox-python-sdk
+protobuf
 
 # Data Processing
 pandas

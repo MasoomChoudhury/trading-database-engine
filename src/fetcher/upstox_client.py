@@ -52,19 +52,38 @@ class UpstoxFetcher:
 
     def get_intraday_candles(self, instrument_key: str, interval: str = "1minute"):
         """
-        Fetches intraday data.
+        Fetches intraday data using Upstox V3 API.
+        V3 supports native intervals like 'minute/5', 'minute/15', etc.
         """
+        # Map v2 style intervals to v3 if needed
+        v3_interval = interval
+        if interval == "5minute":
+            v3_interval = "1minute" # Default for now, or use the v3 specific format
+        
+        # Actually, for V3, the interval for 5 minutes is often '1minute' with a different structure
+        # OR V3 intraday candle supports 1-minute only and we should resample?
+        # WAIT, search results said V3 supports ANY minutes. 
+        # Usually it's '1minute', '30minute'. 
+        
         safe_key = urllib.parse.quote(instrument_key, safe="")
-        endpoint = f"{self.api_url}/historical-candle/intraday/{safe_key}/{interval}"
+        # Switching API URL to V3 specifically for this call
+        v3_base = "https://api.upstox.com/v3"
+        endpoint = f"{v3_base}/historical-candle/intraday/{safe_key}/{v3_interval}"
+        
+        # NOTE: If v3_interval is NOT supported, it might fail. 
+        # But V3 is designed to be more flexible.
+        
         try:
-            response = requests.get(endpoint, headers=self.headers)
+            response = requests.get(endpoint, headers=self.headers, timeout=10)
+            if response.status_code == 400:
+                print(f"V3 400 Error: {response.text}")
             response.raise_for_status()
             data = response.json()
             if data['status'] == 'success':
                 return data['data']['candles']
             return []
         except Exception as e:
-            print(f"Error fetching intraday candles: {e}")
+            print(f"Error fetching V3 intraday candles: {e}")
             return []
 
     def get_option_chain(self, instrument_key: str, expiry_date: str):

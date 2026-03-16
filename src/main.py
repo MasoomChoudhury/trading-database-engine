@@ -5,6 +5,47 @@ from fetcher.upstox_client import UpstoxFetcher
 from processor.indicator_engine import CalculationEngine
 from database.supabase_client import RemoteDBWatcher
 
+def resample_ohlc(data, interval='5min'):
+    if not data or len(data) == 0:
+        return []
+    
+    import pandas as pd
+    # Upstox returns: [timestamp, open, high, low, close, volume, oi]
+    df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'oi'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df.set_index('timestamp', inplace=True)
+    
+    # Cast to numeric
+    for col in ['open', 'high', 'low', 'close', 'volume', 'oi']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Resample
+    # labeling='left' and closed='left' is standard for financial data (e.g., 09:15 bar contains 09:15-09:19)
+    resampled = df.resample(interval, label='left', closed='left').agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'volume': 'sum',
+        'oi': 'last'
+    }).dropna()
+    
+    # Convert back to list of lists format for the rest of the engine
+    result = []
+    for timestamp, row in resampled.iterrows():
+        # Format timestamp back to string
+        ts_str = timestamp.strftime('%Y-%m-%dT%H:%M:%S+05:30')
+        result.append([
+            ts_str,
+            row['open'],
+            row['high'],
+            row['low'],
+            row['close'],
+            int(row['volume']),
+            int(row['oi'])
+        ])
+    return result
+
 def run_5min_sync_job():
     print(f"--- Starting Sync Job at {datetime.datetime.now()} ---")
     
@@ -21,8 +62,11 @@ def run_5min_sync_job():
     # For a real implementation, you'd calculate the exact 5-min boundary timestamp.
     
     # 2. Fetch Data
-    print(f"Fetching 5-minute candles for {instrument_key}...")
-    candles = fetcher.get_intraday_candles(instrument_key=instrument_key, interval="5minute")
+    print(f"Fetching 1-minute candles for {instrument_key} (to be resampled)...")
+    raw_1min_candles = fetcher.get_intraday_candles(instrument_key=instrument_key, interval="1minute")
+    
+    # Resample to 5-minute
+    candles = resample_ohlc(raw_1min_candles, '5min')
     
     if not candles:
         print("Warning: No candles retrieved. Skipping cycle.")
@@ -67,8 +111,9 @@ def run_5min_sync_job():
     except Exception as e:
         print(f"Error resolving Nifty Futures Key: {e}")
 
-    print(f"Fetching 5-minute candles for Futures: {future_instrument_key}...")
-    fut_candles = fetcher.get_intraday_candles(instrument_key=future_instrument_key, interval="5minute")
+    print(f"Fetching 1-minute candles for Futures: {future_instrument_key} (to be resampled)...")
+    raw_fut_1min_candles = fetcher.get_intraday_candles(instrument_key=future_instrument_key, interval="1minute")
+    fut_candles = resample_ohlc(raw_fut_1min_candles, '5min')
     
     # 3. Process Data
     print("Processing standard indicators...")
