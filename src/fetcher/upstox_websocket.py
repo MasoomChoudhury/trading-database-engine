@@ -48,10 +48,23 @@ class UpstoxWebSocketClient:
             logger.error(f"Error fetching authorized URL: {e}")
             return None
 
+    def _write_status(self, is_running: bool):
+        """Writes the current status to a heartbeat file."""
+        try:
+            with open("ws_status.json", "w") as f:
+                json.dump({
+                    "last_heartbeat": time.time(),
+                    "is_running": is_running
+                }, f)
+        except Exception as e:
+            logger.error(f"Error writing status file: {e}")
+
     async def _connect(self):
         """Establishes the WebSocket connection and sends the subscription request."""
+        self._write_status(True)
         self.uri = self._get_authorized_url()
         if not self.uri:
+            self._write_status(False)
             raise Exception("Could not obtain authorized WebSocket URI.")
 
         logger.info(f"Connecting to Upstox WebSocket: {self.uri}")
@@ -71,12 +84,14 @@ class UpstoxWebSocketClient:
             self.is_running = True
             self.reconnect_interval = 1 # Reset interval on success
             logger.info("✅ Upstox WebSocket Connected!")
+            self._write_status(True)
             
             # Subscriptions must be sent as binary
             await self.websocket.send(json.dumps(payload).encode('utf-8'))
             logger.info(f"Subscribed to {len(self.instrument_keys)} instruments in '{self.mode}' mode.")
 
             async for message in self.websocket:
+                self._write_status(True) # Heartbeat on each message
                 if isinstance(message, bytes):
                     decoded_data = UpstoxDecoder.decode(message)
                     if decoded_data:
@@ -95,6 +110,7 @@ class UpstoxWebSocketClient:
             try:
                 await self._connect()
             except (websockets.ConnectionClosed, Exception) as e:
+                self._write_status(False)
                 if not self.is_running:
                     break
                 
@@ -107,6 +123,8 @@ class UpstoxWebSocketClient:
     def stop(self):
         """Stops the WebSocket client."""
         self.is_running = False
+        self._write_status(False)
         if self.websocket:
             asyncio.create_task(self.websocket.close())
             logger.info("Upstox WebSocket Client stopped.")
+

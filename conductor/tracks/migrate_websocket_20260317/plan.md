@@ -25,7 +25,7 @@ This plan outlines the steps for transitioning from polling historical/intraday 
 - [x] **Task: Conductor - User Manual Verification 'Phase 2: Core WebSocket Implementation' (Protocol in workflow.md)**
 
 ## Phase 3: Integration and Orchestration
-- [ ] **Task: Integrate WebSocket with `IndicatorEngine`**
+- [~] **Task: Integrate WebSocket with `IndicatorEngine`**
     - [ ] Modify the 5-minute sync loop in `src/main.py` (or create a new entry point) to consume WebSocket aggregated candles.
     - [ ] Ensure `CalculationEngine` correctly processes the real-time data.
 - [ ] **Task: Verify Supabase Real-time Sync**

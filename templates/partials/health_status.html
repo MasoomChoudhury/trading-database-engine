@@ -41,3 +41,14 @@
         </div>
     </div>
 </div>
+
+<div class="bg-[#1e293b] p-4 rounded-xl border border-slate-700 flex flex-col justify-between shadow-lg">
+    <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">WebSocket Feed</span>
+    <div class="flex items-center justify-between">
+        <span class="text-sm font-bold {% if websocket == 'Active' %}text-purple-400{% elif websocket == 'Stalled' %}text-yellow-400{% else %}text-red-400{% endif %}">{{ websocket
+            }}</span>
+        <div
+            class="w-2 h-2 rounded-full {% if websocket == 'Active' %}bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]{% elif websocket == 'Stalled' %}bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.5)]{% else %}bg-red-500 shadow-[0_0_8_rgba(239,68,68,0.5)]{% endif %}">
+        </div>
+    </div>
+</div>

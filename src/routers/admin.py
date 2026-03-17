@@ -31,23 +31,49 @@ def check_db_health():
     except:
         return "Disconnected"
 
+import json
+import time
+
+def check_ws_health():
+    """Checks the status of the WebSocket engine from its heartbeat file."""
+    status_file = "ws_status.json"
+    if not os.path.exists(status_file):
+        return "Not Started"
+    
+    try:
+        with open(status_file, "r") as f:
+            status_data = json.load(f)
+            last_heartbeat = status_data.get("last_heartbeat", 0)
+            is_running = status_data.get("is_running", False)
+            
+            # If heartbeat is within last 30 seconds and marked running
+            if is_running and (time.time() - last_heartbeat) < 30:
+                return "Active"
+            elif is_running:
+                return "Stalled"
+            else:
+                return "Stopped"
+    except:
+        return "Error"
+
 @router.get("/health", response_class=HTMLResponse)
 async def health_check(request: Request):
     # Fetch system metrics
-    # Using 0.1s interval to get a real reading, otherwise first call is often 0 or 100
     cpu_usage = psutil.cpu_percent(interval=0.1)
     ram_usage = psutil.virtual_memory().percent
     
     # Real health status
     upstox_status = check_upstox_health()
     db_status = check_db_health()
+    ws_status = check_ws_health()
     
     return templates.TemplateResponse("partials/health_status.html", {
         "request": request,
         "cpu": cpu_usage,
         "ram": ram_usage,
         "upstox": upstox_status,
-        "db": db_status
+        "db": db_status,
+        "websocket": ws_status
     })
 
 @router.post("/update", response_class=HTMLResponse)
