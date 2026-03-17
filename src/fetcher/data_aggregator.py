@@ -23,16 +23,22 @@ class MarketDataAggregator:
         feeds = feed_response.get('feeds', {})
         for instrument_key, feed in feeds.items():
             # Handle different feed types
-            # Priority: full_feed -> first_level_with_greeks -> ltpc
+            # Priority: fullFeed -> firstLevelWithGreeks -> ltpc
             data = None
-            if 'full_feed' in feed:
+            if 'fullFeed' in feed:
+                ff = feed['fullFeed']
+                if 'marketFF' in ff:
+                    data = ff['marketFF'].get('ltpc')
+                elif 'indexFF' in ff:
+                    data = ff['indexFF'].get('ltpc')
+            elif 'full_feed' in feed: # Handle snake_case if any
                 ff = feed['full_feed']
                 if 'market_ff' in ff:
-                    data = ff['market_ff']['ltpc']
+                    data = ff['market_ff'].get('ltpc')
                 elif 'index_ff' in ff:
-                    data = ff['index_ff']['ltpc']
-            elif 'first_level_with_greeks' in feed:
-                data = feed['first_level_with_greeks']['ltpc']
+                    data = ff['index_ff'].get('ltpc')
+            elif 'firstLevelWithGreeks' in feed:
+                data = feed['firstLevelWithGreeks'].get('ltpc')
             elif 'ltpc' in feed:
                 data = feed['ltpc']
 
