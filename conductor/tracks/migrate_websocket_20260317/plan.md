@@ -10,10 +10,10 @@ This plan outlines the steps for transitioning from polling historical/intraday 
 - [x] **Task: Conductor - User Manual Verification 'Phase 1: Research and Prototyping' (Protocol in workflow.md)**
 
 ## Phase 2: Core WebSocket Implementation
-- [ ] **Task: Setup Protobuf Decoding**
-    - [ ] Install `protobuf` compiler and Python library.
-    - [ ] Generate Python bindings from `src/fetcher/market_data.proto`.
-    - [ ] Create a utility to decode incoming WebSocket binary messages into `FeedResponse` objects.
+- [x] **Task: Setup Protobuf Decoding**
+    - [x] Install `protobuf` compiler and Python library.
+    - [x] Generate Python bindings from `src/fetcher/market_data.proto`.
+    - [x] Create a utility to decode incoming WebSocket binary messages into `FeedResponse` objects. [f4d6e9a]
 - [ ] **Task: Implement `UpstoxWebSocketClient`**
     - [ ] Create `src/fetcher/upstox_websocket.py`.
     - [ ] Implement connection logic, authentication, and heartbeats.
