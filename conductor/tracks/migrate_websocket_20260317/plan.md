@@ -9,7 +9,7 @@ This plan outlines the steps for transitioning from polling historical/intraday 
     - [x] Prototype a basic `asyncio`-based WebSocket connection to Upstox.
 - [x] **Task: Conductor - User Manual Verification 'Phase 1: Research and Prototyping' (Protocol in workflow.md)**
 
-## Phase 2: Core WebSocket Implementation
+## Phase 2: Core WebSocket Implementation [checkpoint: a340eb5]
 - [x] **Task: Setup Protobuf Decoding**
     - [x] Install `protobuf` compiler and Python library.
     - [x] Generate Python bindings from `src/fetcher/market_data.proto`.
@@ -22,7 +22,7 @@ This plan outlines the steps for transitioning from polling historical/intraday 
 - [x] **Task: Implement Real-time Data Aggregation**
     - [x] Develop a mechanism to aggregate tick data into 1-minute and 5-minute OHLCV candles.
     - [x] Handle concurrent updates for multiple instrument keys. [d8de94b]
-- [ ] **Task: Conductor - User Manual Verification 'Phase 2: Core WebSocket Implementation' (Protocol in workflow.md)**
+- [x] **Task: Conductor - User Manual Verification 'Phase 2: Core WebSocket Implementation' (Protocol in workflow.md)**
 
 ## Phase 3: Integration and Orchestration
 - [ ] **Task: Integrate WebSocket with `IndicatorEngine`**
