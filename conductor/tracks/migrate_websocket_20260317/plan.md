@@ -19,9 +19,9 @@ This plan outlines the steps for transitioning from polling historical/intraday 
     - [x] Implement connection logic, authentication, and heartbeats.
     - [x] Integrate the Protobuf decoder to process incoming messages.
     - [x] Implement robust auto-reconnect with exponential backoff. [be5646c]
-- [ ] **Task: Implement Real-time Data Aggregation**
-    - [ ] Develop a mechanism to aggregate tick data into 1-minute and 5-minute OHLCV candles.
-    - [ ] Handle concurrent updates for multiple instrument keys.
+- [x] **Task: Implement Real-time Data Aggregation**
+    - [x] Develop a mechanism to aggregate tick data into 1-minute and 5-minute OHLCV candles.
+    - [x] Handle concurrent updates for multiple instrument keys. [d8de94b]
 - [ ] **Task: Conductor - User Manual Verification 'Phase 2: Core WebSocket Implementation' (Protocol in workflow.md)**
 
 ## Phase 3: Integration and Orchestration
