@@ -14,11 +14,11 @@ This plan outlines the steps for transitioning from polling historical/intraday 
     - [x] Install `protobuf` compiler and Python library.
     - [x] Generate Python bindings from `src/fetcher/market_data.proto`.
     - [x] Create a utility to decode incoming WebSocket binary messages into `FeedResponse` objects. [f4d6e9a]
-- [ ] **Task: Implement `UpstoxWebSocketClient`**
-    - [ ] Create `src/fetcher/upstox_websocket.py`.
-    - [ ] Implement connection logic, authentication, and heartbeats.
-    - [ ] Integrate the Protobuf decoder to process incoming messages.
-    - [ ] Implement robust auto-reconnect with exponential backoff.
+- [x] **Task: Implement `UpstoxWebSocketClient`**
+    - [x] Create `src/fetcher/upstox_websocket.py`.
+    - [x] Implement connection logic, authentication, and heartbeats.
+    - [x] Integrate the Protobuf decoder to process incoming messages.
+    - [x] Implement robust auto-reconnect with exponential backoff. [be5646c]
 - [ ] **Task: Implement Real-time Data Aggregation**
     - [ ] Develop a mechanism to aggregate tick data into 1-minute and 5-minute OHLCV candles.
     - [ ] Handle concurrent updates for multiple instrument keys.
