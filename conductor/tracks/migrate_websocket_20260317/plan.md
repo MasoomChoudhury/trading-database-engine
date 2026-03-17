@@ -2,7 +2,7 @@
 
 This plan outlines the steps for transitioning from polling historical/intraday endpoints to a WebSocket-based live data feed for Upstox.
 
-## Phase 1: Research and Prototyping
+## Phase 1: Research and Prototyping [checkpoint: 5337557]
 - [x] **Task: Research Upstox WebSocket Protocol**
     - [x] Review the provided Upstox WebSocket documentation.
     - [x] Identify correct versions (v2/v3) for Market Data Feed and individual modules.
