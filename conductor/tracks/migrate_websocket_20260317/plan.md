@@ -7,7 +7,7 @@ This plan outlines the steps for transitioning from polling historical/intraday 
     - [x] Review the provided Upstox WebSocket documentation.
     - [x] Identify correct versions (v2/v3) for Market Data Feed and individual modules.
     - [x] Prototype a basic `asyncio`-based WebSocket connection to Upstox.
-- [ ] **Task: Conductor - User Manual Verification 'Phase 1: Research and Prototyping' (Protocol in workflow.md)**
+- [x] **Task: Conductor - User Manual Verification 'Phase 1: Research and Prototyping' (Protocol in workflow.md)**
 
 ## Phase 2: Core WebSocket Implementation
 - [ ] **Task: Setup Protobuf Decoding**
