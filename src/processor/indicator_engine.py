@@ -1,5 +1,9 @@
 import pandas as pd
-import pandas_ta as ta
+try:
+    import pandas_ta as ta
+except ImportError:
+    print("Warning: pandas_ta not found. Technical indicators will be skipped.")
+    ta = None
 
 class CalculationEngine:
     def __init__(self):
