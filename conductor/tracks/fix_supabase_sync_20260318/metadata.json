@@ -1,0 +1,8 @@
+{
+  "track_id": "fix_supabase_sync_20260318",
+  "type": "bug",
+  "status": "new",
+  "created_at": "2026-03-18T13:45:00Z",
+  "updated_at": "2026-03-18T13:45:00Z",
+  "description": "The calculated data is not getting updated to supabase verify the issue. I checked the logs and not a single request is being made to market_data table in supabase, only request that is made is to the app_config table with upstox token when i update it"
+}
