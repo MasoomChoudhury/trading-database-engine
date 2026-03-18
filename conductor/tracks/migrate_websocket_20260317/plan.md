@@ -24,7 +24,7 @@ This plan outlines the steps for transitioning from polling historical/intraday 
     - [x] Handle concurrent updates for multiple instrument keys. [d8de94b]
 - [x] **Task: Conductor - User Manual Verification 'Phase 2: Core WebSocket Implementation' (Protocol in workflow.md)**
 
-## Phase 3: Integration and Orchestration [checkpoint: 08d0e7a]
+## Phase 3: Integration and Orchestration [checkpoint: bbdf6e8]
 - [x] **Task: Integrate WebSocket with `IndicatorEngine`** [08d0e7a]
     - [x] Modify the 5-minute sync loop in `src/main.py` (or create a new entry point) to consume WebSocket aggregated candles.
     - [x] Ensure `CalculationEngine` correctly processes the real-time data.
