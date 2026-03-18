@@ -35,8 +35,8 @@ This plan outlines the steps for transitioning from polling historical/intraday 
 - [x] **Task: Conductor - User Manual Verification 'Phase 3: Integration and Orchestration' (Protocol in workflow.md)** [08d0e7a]
 
 ## Phase 4: Final Validation and Deployment
-- [ ] **Task: Final Testing and VPS Deployment Readiness**
-    - [ ] Perform long-running stability tests to ensure no connection leaks.
-    - [ ] Validate that historical data fetching is still working correctly.
-    - [ ] Update documentation for VPS deployment with the new WebSocket client.
-- [ ] **Task: Conductor - User Manual Verification 'Phase 4: Final Validation and Deployment' (Protocol in workflow.md)**
+- [x] **Task: Final Testing and VPS Deployment Readiness**
+    - [x] Perform long-running stability tests to ensure no connection leaks.
+    - [x] Validate that historical data fetching is still working correctly.
+    - [x] Update documentation for VPS deployment with the new WebSocket client.
+- [x] **Task: Conductor - User Manual Verification 'Phase 4: Final Validation and Deployment' (Protocol in workflow.md)**

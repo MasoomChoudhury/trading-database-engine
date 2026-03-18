@@ -97,13 +97,13 @@ docker ps
 ### Option A: Manual Launch (For Testing)
 ```bash
 source venv/bin/activate
-python src/main.py
+python src/main_async.py
 ```
 
 ### Option B: PM2 Deployment (Production)
 PM2 will automatically restart the script if it crashes and handles logs.
 ```bash
-pm2 start src/main.py --name "db-engine" --interpreter ./venv/bin/python
+pm2 start src/main_async.py --name "db-engine" --interpreter ./venv/bin/python
 pm2 save
 pm2 startup
 ```
