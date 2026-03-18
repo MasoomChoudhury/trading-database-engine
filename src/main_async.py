@@ -68,9 +68,20 @@ async def run_5min_sync_cycle():
         expiry_date = get_next_nifty_expiry(current_time.date())
         option_chain_data = fetcher.get_option_chain(instrument_key, expiry_date)
         
-        # Future Instrument Key (Simplified resolution for now)
-        future_instrument_key = "NSE_FO|NIFTY_FUT" # In production, use the resolution logic from main.py
-        
+        # Resolve Front-Month Nifty Futures
+        future_instrument_key = "NSE_FO|NIFTY_FUT"
+        try:
+            expiries = fetcher.get_expiries(instrument_key)
+            if expiries:
+                for exp in expiries[:4]:
+                    f_contracts = fetcher.get_future_contracts(instrument_key, exp)
+                    if f_contracts:
+                        future_instrument_key = f_contracts[0]['instrument_key']
+                        logger.info(f"✅ Found Active Future: {f_contracts[0]['trading_symbol']}")
+                        break
+        except Exception as e:
+            logger.error(f"Error resolving Nifty Futures Key: {e}")
+
         # 4. Technical Indicators
         df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'oi'])
         df['open'] = pd.to_numeric(df['open'])
@@ -79,7 +90,7 @@ async def run_5min_sync_cycle():
         df['close'] = pd.to_numeric(df['close'])
         df['volume'] = pd.to_numeric(df['volume'])
         
-        df['timestamp_dt'] = pd.to_datetime(df['timestamp'])
+        df['timestamp_dt'] = pd.to_datetime(df['timestamp'], format='ISO8601', utc=True)
         df.sort_values('timestamp_dt', inplace=True)
         df.drop(columns=['timestamp_dt'], inplace=True)
         df.reset_index(drop=True, inplace=True)
@@ -87,22 +98,26 @@ async def run_5min_sync_cycle():
         df['vol_sma_20'] = df['volume'].rolling(window=20).mean()
         df = processor.compute_standard_indicators(df)
         
-        # 5. Additional Macro Metrics (Quotes, VIX, Max Pain, etc.)
-        # (Using synchronous fetcher calls for now as UpstoxFetcher is synchronous)
-        # In a full async refactor, these would be awaited.
-        
+        # 5. Additional Macro Metrics (Ported from main.py)
         latest = df.iloc[-1].to_dict()
         latest_close = float(latest['close'])
         
-        # Fetching other metrics (Simplified for main sync loop)
+        # VIX and Index Macro
         vix_quote = fetcher.get_market_quote(["NSE_INDEX|India VIX"])
         vix_data = vix_quote.get("NSE_INDEX|India VIX", {})
         index_macro = processor.compute_index_macro_dict(vix_data)
         
-        # ... (Include other logic from main.py as needed) ...
-        # For brevity, I'm focusing on the payload generation and upsert
+        # GEX, CPR, Key Levels
+        net_gex = processor.compute_net_gex(option_chain_data, latest_close)
         
-        # 6. Generate Payload and Sync to Supabase
+        # Determine Market Internals
+        vwap_val = latest.get('vwap', 0.0)
+        market_internals = "Mixed Flow"
+        if latest_close > vwap_val and net_gex > 0:
+            market_internals = "Aligned Flow (Bullish)"
+        elif latest_close < vwap_val and net_gex < 0:
+            market_internals = "Aligned Flow (Bearish)"
+
         synthetic_ohlc = {
             'open': latest.get('open'),
             'high': latest.get('high'),
@@ -110,17 +125,15 @@ async def run_5min_sync_cycle():
             'close': latest.get('close'),
             'volume': latest.get('volume')
         }
-        
-        net_gex = processor.compute_net_gex(option_chain_data, latest_close)
-        
-        # Dummy/Placeholder for complex nested dicts not yet fully async-adapted
-        # (In production, these would be fully populated)
+
         indicators = {
             'rsi_14': latest.get('rsi_14'),
             'vwap': latest.get('vwap'),
             'ema_20': latest.get('ema_20'),
             'ema_50': latest.get('ema_50'),
+            'opening_range_status': processor.compute_opening_range_status(df, pd.to_datetime(latest['timestamp'])),
             'index_macro': index_macro,
+            'market_internals': market_internals,
             'meta': processor.compute_meta_dict(pd.to_datetime(latest['timestamp']), latest_close),
             'source': 'websocket' if live_candle else 'rest'
         }
