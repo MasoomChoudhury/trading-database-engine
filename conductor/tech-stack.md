@@ -6,6 +6,7 @@
 ## Web & API Framework
 - **FastAPI:** A modern, high-performance web framework for the dashboard and API endpoints.
 - **Uvicorn:** A fast ASGI server for running the FastAPI application.
+- **asyncio:** Native support for concurrent data fetching and processing.
 - **Jinja2:** For template rendering in the dashboard.
 
 ## Data Processing & Analysis
@@ -20,7 +21,7 @@
 
 ## External Data Ingestion
 - **Upstox Python SDK:** To fetch market data, option chains, and Greeks from the Upstox API.
-- **Requests & WebSockets:** For handling API calls and potential real-time tick data.
+- **websockets & Protocol Buffers:** Persistent WebSocket connection with Protobuf binary decoding for live market data feeds.
 
 ## Utilities & Environment
 - **python-dotenv:** To manage environment variables and API keys securely.

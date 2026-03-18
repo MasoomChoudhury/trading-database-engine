@@ -22,5 +22,5 @@ To empower intraday traders with a robust, automated market data infrastructure.
 
 ## Technical Principles
 - **Modularity:** Separation of concerns between fetching (Upstox), processing (Indicator Engine), and storage (Supabase/TimescaleDB).
-- **Automation:** Scheduled, autonomous sync cycles (5-minute intervals) for seamless data flow.
+- **Real-time Ingestion:** Transition from polling to a persistent WebSocket-based live data feed for lower latency and improved accuracy.
 - **Observability:** Health status monitoring and administrative tools via the web interface.
