@@ -24,15 +24,15 @@ This plan outlines the steps for transitioning from polling historical/intraday 
     - [x] Handle concurrent updates for multiple instrument keys. [d8de94b]
 - [x] **Task: Conductor - User Manual Verification 'Phase 2: Core WebSocket Implementation' (Protocol in workflow.md)**
 
-## Phase 3: Integration and Orchestration
-- [~] **Task: Integrate WebSocket with `IndicatorEngine`**
-    - [ ] Modify the 5-minute sync loop in `src/main.py` (or create a new entry point) to consume WebSocket aggregated candles.
-    - [ ] Ensure `CalculationEngine` correctly processes the real-time data.
-- [ ] **Task: Verify Supabase Real-time Sync**
-    - [ ] Confirm that the aggregated live data is being correctly upserted to the `market_data` table in Supabase.
-- [ ] **Task: Update FastAPI Dashboard for Real-time Status**
-    - [ ] Modify `src/main_web.py` to reflect the WebSocket connection status and latest live sync timestamp.
-- [ ] **Task: Conductor - User Manual Verification 'Phase 3: Integration and Orchestration' (Protocol in workflow.md)**
+## Phase 3: Integration and Orchestration [checkpoint: 08d0e7a]
+- [x] **Task: Integrate WebSocket with `IndicatorEngine`** [08d0e7a]
+    - [x] Modify the 5-minute sync loop in `src/main.py` (or create a new entry point) to consume WebSocket aggregated candles.
+    - [x] Ensure `CalculationEngine` correctly processes the real-time data.
+- [x] **Task: Verify Supabase Real-time Sync** [08d0e7a]
+    - [x] Confirm that the aggregated live data is being correctly upserted to the `market_data` table in Supabase.
+- [x] **Task: Update FastAPI Dashboard for Real-time Status** [08d0e7a]
+    - [x] Modify `src/main_web.py` to reflect the WebSocket connection status and latest live sync timestamp.
+- [x] **Task: Conductor - User Manual Verification 'Phase 3: Integration and Orchestration' (Protocol in workflow.md)** [08d0e7a]
 
 ## Phase 4: Final Validation and Deployment
 - [ ] **Task: Final Testing and VPS Deployment Readiness**
