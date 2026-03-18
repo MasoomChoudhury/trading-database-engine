@@ -1497,10 +1497,14 @@ class CalculationEngine:
     def generate_5min_sync_payload(self, current_timestamp, synthetic_ohlc, net_gex, indicators_dict):
         """
         Packages the calculated data into a single row dictionary 
-        ready to be stored in the Supabase `market_data_5min` table.
+        ready to be stored in the Supabase `market_data` table.
         """
+        # Standardize timestamp key to 'timestamp' to match data.py and common conventions
+        ts_iso = current_timestamp.isoformat()
+        
         payload = {
-            "ts": current_timestamp.isoformat(),
+            "timestamp": ts_iso,
+            "ts": ts_iso, # Maintain 'ts' for backward compatibility in some queries
             "datetime": str(current_timestamp),
             "symbol": "NIFTY50",
             
@@ -1512,6 +1516,14 @@ class CalculationEngine:
             "Volume": int(synthetic_ohlc['volume']) if synthetic_ohlc['volume'] is not None else None,
             "OI": 0, # Placeholder until Upstox futures OI is integrated
             
+            # Nested OHLC for TradingView Charts (expects 'historical_time_series')
+            "historical_time_series": {
+                "open": float(synthetic_ohlc['open']) if synthetic_ohlc['open'] is not None else None,
+                "high": float(synthetic_ohlc['high']) if synthetic_ohlc['high'] is not None else None,
+                "low": float(synthetic_ohlc['low']) if synthetic_ohlc['low'] is not None else None,
+                "close": float(synthetic_ohlc['close']) if synthetic_ohlc['close'] is not None else None,
+                "volume": int(synthetic_ohlc['volume']) if synthetic_ohlc['volume'] is not None else None
+            },
             # Simple Core Indicators (Top Level)
             "VWAP_D": round(float(indicators_dict.get('vwap', 0.0)), 2) if indicators_dict.get('vwap') else None,
             "EMA_21": round(float(indicators_dict.get('ema_21', 0.0)), 2) if indicators_dict.get('ema_21') else None,

@@ -12,24 +12,30 @@ class UpstoxFetcher:
     def __init__(self):
         self.api_url = "https://api.upstox.com/v2"
         self.access_token = os.getenv("UPSTOX_ACCESS_TOKEN")
-        
-        # Try to get token from Supabase if available
+        self.refresh_token_from_cloud()
+
+    def refresh_token_from_cloud(self):
+        """
+        Attempts to fetch the latest access token from Supabase cloud config.
+        Updates self.access_token and self.headers.
+        """
         try:
             db = RemoteDBWatcher()
             cloud_token = db.get_config("UPSTOX_ACCESS_TOKEN")
             if cloud_token:
                 self.access_token = cloud_token
-                print("Using UPSTOX_ACCESS_TOKEN from Supabase cloud config.")
+                print("✅ Using UPSTOX_ACCESS_TOKEN from Supabase cloud config.")
+            
+            self.headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Accept": "application/json"
+            }
         except Exception as e:
-            print(f"Failed to fetch cloud token, falling back to .env: {e}")
-
-        self.headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Accept": "application/json"
-        }
-        
-        if not self.access_token:
-            print("WARNING: UPSTOX_ACCESS_TOKEN is missing. API calls will fail.")
+            print(f"⚠ Failed to fetch cloud token: {e}")
+            self.headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Accept": "application/json"
+            }
 
     def get_historical_candles(self, instrument_key: str, interval: str, to_date: str, from_date: str):
         """

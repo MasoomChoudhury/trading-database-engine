@@ -28,6 +28,9 @@ async def run_5min_sync_cycle():
     """Performs the 5-minute sync processing using aggregated or fetched data."""
     logger.info(f"--- Starting Sync Job at {datetime.datetime.now()} ---")
     
+    # 0. Refresh token from cloud before each cycle to prevent expiration
+    fetcher.refresh_token_from_cloud()
+    
     instrument_key = "NSE_INDEX|Nifty 50"
     current_time = datetime.datetime.now()
     
@@ -99,6 +102,7 @@ async def run_5min_sync_cycle():
         df = processor.compute_standard_indicators(df)
         
         # 5. Additional Macro Metrics (Ported from main.py)
+        # We pick iloc[-1] as the most recent data point
         latest = df.iloc[-1].to_dict()
         latest_close = float(latest['close'])
         
@@ -110,6 +114,34 @@ async def run_5min_sync_cycle():
         # GEX, CPR, Key Levels
         net_gex = processor.compute_net_gex(option_chain_data, latest_close)
         
+        # Fetch daily context for CPR
+        today_str = current_time.strftime('%Y-%m-%d')
+        from_date_str = (current_time - datetime.timedelta(days=35)).strftime('%Y-%m-%d')
+        daily_candles = fetcher.get_historical_candles(instrument_key, "day", today_str, from_date_str)
+        
+        cpr_status = "Unknown"
+        cpr_width = "Unknown"
+        key_levels = {}
+        pdc = 0.0
+        pdh = 0.0
+        pdl = 0.0
+
+        if daily_candles:
+            prev_day_candle = None
+            for candle in daily_candles:
+                candle_date = pd.to_datetime(candle[0]).date()
+                if candle_date < current_time.date():
+                    prev_day_candle = candle
+                    break
+            
+            if prev_day_candle:
+                pdh = float(prev_day_candle[2])
+                pdl = float(prev_day_candle[3])
+                pdc = float(prev_day_candle[4])
+                cpr_status = processor.compute_cpr_status(latest_close, pdh, pdl, pdc)
+                cpr_width = processor.compute_cpr_width(pdh, pdl, pdc)
+                key_levels = processor.compute_key_intraday_levels(latest_close, pdh, pdl)
+
         # Determine Market Internals
         vwap_val = latest.get('vwap', 0.0)
         market_internals = "Mixed Flow"
@@ -126,14 +158,37 @@ async def run_5min_sync_cycle():
             'volume': latest.get('volume')
         }
 
+        # Calculate missing dict indicators
+        vwap_status = processor.compute_vwap_status_dict(latest_close, vwap_val)
+        momentum_burst = processor.compute_momentum_burst_dict(
+            current_volume=latest.get('volume', 0), 
+            avg_volume=latest.get('vol_sma_20', 0),
+            current_timestamp=pd.to_datetime(latest['timestamp'])
+        )
+        volume_profile = processor.compute_volume_profile_dict(df, pd.to_datetime(latest['timestamp']))
+        derived_features = processor.compute_derived_features_dict(df, pd.to_datetime(latest['timestamp']))
+        technical_indicators = processor.compute_technical_indicators_dict(latest)
+        catalyst_context = processor.compute_catalyst_context_dict(df, pd.to_datetime(latest['timestamp']), pdc)
+        institutional_context = processor.compute_institutional_context_dict(latest_close, latest.get('sma_200', 0.0), pdh, pdl)
+
         indicators = {
             'rsi_14': latest.get('rsi_14'),
             'vwap': latest.get('vwap'),
-            'ema_20': latest.get('ema_20'),
+            'ema_21': latest.get('ema_21'),
             'ema_50': latest.get('ema_50'),
             'opening_range_status': processor.compute_opening_range_status(df, pd.to_datetime(latest['timestamp'])),
+            'cpr_relationship': cpr_status,
+            'cpr_width': cpr_width,
+            'vwap_status': vwap_status,
+            'key_intraday_levels': key_levels,
+            'momentum_burst': momentum_burst,
+            'catalyst_context': catalyst_context,
+            'institutional_context': institutional_context,
             'index_macro': index_macro,
             'market_internals': market_internals,
+            'volume_profile': volume_profile,
+            'derived_features': derived_features,
+            'technical_indicators': technical_indicators,
             'meta': processor.compute_meta_dict(pd.to_datetime(latest['timestamp']), latest_close),
             'source': 'websocket' if live_candle else 'rest'
         }
@@ -145,11 +200,14 @@ async def run_5min_sync_cycle():
             indicators_dict=indicators
         )
         
+        # 6. Upsert to Supabase
+        logger.info(f"Syncing payload to Supabase for {latest['timestamp']}...")
         result = supabase.upsert_5min_summary(payload)
+        
         if result:
             logger.info(f"✅ Successfully synced to Supabase at {latest['timestamp']}!")
         else:
-            logger.error("❌ Failed to sync to Supabase.")
+            logger.error(f"❌ Failed to sync to Supabase for {latest['timestamp']}.")
             
     except Exception as e:
         logger.error(f"Error during async sync cycle: {e}", exc_info=True)

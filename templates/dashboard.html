@@ -195,9 +195,19 @@
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const chartElement = document.getElementById('tv-chart');
+        if (!chartElement) {
+            console.error("Chart container not found.");
+            return;
+        }
+
+        if (typeof LightweightCharts === 'undefined') {
+            console.error("LightweightCharts library failed to load.");
+            return;
+        }
+
         const chart = LightweightCharts.createChart(chartElement, {
             layout: {
-                background: { color: '#0f172a' },
+                background: { type: LightweightCharts.ColorType.Solid, color: '#0f172a' },
                 textColor: '#94a3b8',
             },
             grid: {
@@ -214,23 +224,33 @@
             },
         });
 
-        const candleSeries = chart.addCandlestickSeries({
-            upColor: '#22c55e',
-            downColor: '#ef4444',
-            borderVisible: false,
-            wickUpColor: '#22c55e',
-            wickDownColor: '#ef4444',
-        });
+        // Use the explicit method name for the current version
+        let candleSeries;
+        try {
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#22c55e',
+                downColor: '#ef4444',
+                borderVisible: false,
+                wickUpColor: '#22c55e',
+                wickDownColor: '#ef4444',
+            });
+        } catch (e) {
+            console.error("Failed to add candlestick series:", e);
+        }
 
         // Fetch Initial Data
-        fetch('/data/chart')
-            .then(res => res.json())
-            .then(data => {
-                if (data && data.length > 0) {
-                    candleSeries.setData(data);
-                }
-            })
-            .catch(err => console.error("Failed to load chart data:", err));
+        if (candleSeries) {
+            fetch('/data/chart')
+                .then(res => res.json())
+                .then(data => {
+                    if (data && Array.isArray(data) && data.length > 0) {
+                        // Ensure data is sorted by time
+                        data.sort((a, b) => (a.time > b.time) ? 1 : -1);
+                        candleSeries.setData(data);
+                    }
+                })
+                .catch(err => console.error("Failed to load chart data:", err));
+        }
 
         // Resize handler
         window.addEventListener('resize', () => {

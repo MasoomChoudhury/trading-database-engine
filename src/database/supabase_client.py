@@ -9,11 +9,11 @@ class RemoteDBWatcher:
         url: str = os.getenv("SUPABASE_URL")
         key: str = os.getenv("SUPABASE_KEY")
         if not url or not key:
-            print("WARNING: Supabase URL/Key missing. Running in Dry-Run Mode. Database writes will be mocked.")
+            print("CRITICAL WARNING: Supabase URL/Key missing. Sync engine will NOT work. Running in Dry-Run Mode. Database writes will be mocked.")
             self.supabase = None
         else:
             self.supabase: Client = create_client(url, key)
-            print("Initialized Supabase Client.")
+            print(f"✅ Initialized Supabase Client for URL: {url}")
 
     def upsert_5min_summary(self, data: dict):
         """
@@ -21,15 +21,24 @@ class RemoteDBWatcher:
         The table should have a UNIQUE constraint on (timestamp) or (timestamp, instrument_token).
         """
         try:
+            timestamp = data.get('timestamp') or data.get('ts')
             if not self.supabase:
-                print("DRY-RUN: Upsert triggered. Supabase mock received Payload.")
+                print(f"DRY-RUN: Upsert triggered for timestamp {timestamp}. Supabase mock received Payload.")
                 return data
             
+            print(f"Initiating Supabase Upsert for timestamp: {timestamp}...")
             # The 'upsert' method in Supabase-py relies on primary keys or unique constraints
             response = self.supabase.table('market_data').upsert(data).execute()
-            return response.data
+            
+            # Check for data in response (Supabase-py v2 returns an object with .data)
+            if hasattr(response, 'data') and response.data:
+                print(f"✅ Successfully upserted to market_data for {timestamp}")
+                return response.data
+            else:
+                print(f"⚠ Upsert returned empty/no data for {timestamp}. Check RLS or table constraints.")
+                return None
         except Exception as e:
-            print(f"Error upserting to Supabase: {e}")
+            print(f"❌ Error upserting to Supabase: {e}")
             return None
 
     def get_latest_summary(self):
