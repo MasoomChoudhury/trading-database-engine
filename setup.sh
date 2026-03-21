@@ -3,11 +3,13 @@
 # Database Engine — Master Setup Script
 # =============================================================================
 # ONE script to rule them all. Run this on a fresh VPS and it will:
-#   1. Check and install all system dependencies (Docker, Git, curl, UFW)
+#   1. Install Docker, Git, curl, UFW, Nginx, Certbot
 #   2. Pull the latest code from git
 #   3. Configure Docker daemon security
 #   4. Set up the VPS firewall (only SSH, HTTP, HTTPS open)
-#   5. Start the engine + web dashboard via Docker Compose
+#   5. Configure Nginx reverse proxy → port 8000
+#   6. Install SSL certificate (Let's Encrypt) for your domain
+#   7. Start the engine + web dashboard via Docker Compose
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/YOUR_USER/database-engine/main/setup.sh | bash
@@ -30,12 +32,17 @@ log_error()   { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 log_step()    { echo -e "\n${BLUE}──── $*) ────${NC}"; }
 log_success() { echo -e "${GREEN}[OK]${NC}    $*"; }
 
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="2.0.0"
 PROJECT_NAME="db-engine"
+
+# Domain configuration — change these to match your setup
+DOMAIN="database.masoomchoudhury.com"
+WEB_PORT="8000"          # Docker web container port
+NGINX_PORT="80"           # Nginx listens here (HTTP)
+NGINX_SSL_PORT="443"      # Nginx listens here (HTTPS)
 
 # Detect if running with sudo
 if [ "${EUID:-$(id -u)}" -eq 0 ]; then
-    # Invoked via sudo — use the real user's environment
     SUDO_USER_HOME=$(getent passwd "$(logname 2>/dev/null || echo "${SUDO_USER:-$(whoami)}")" | cut -d: -f6)
     IS_SUDO=1
 else
@@ -47,7 +54,6 @@ fi
 
 log_step "Pre-flight Checks"
 
-# Check for required commands
 MISSING_DEPS=()
 for cmd in curl git sudo; do
     if ! command -v "$cmd" &>/dev/null; then
@@ -69,8 +75,6 @@ log_success "System dependencies OK"
 
 # ── Identify project directory ───────────────────────────────────────────────────
 
-# If we're already inside the project directory, use it.
-# Otherwise clone into ~/database-engine/
 if [ -f "docker-compose.yml" ] && [ -f "Dockerfile" ]; then
     PROJECT_DIR="$(pwd)"
     log_info "Found project at: ${PROJECT_DIR}"
@@ -79,7 +83,6 @@ elif [ -d "${HOME}/database-engine" ]; then
     log_info "Using existing project at: ${PROJECT_DIR}"
 else
     log_step "Cloning Repository"
-    # Prompt for repo URL if not provided
     REPO_URL="${1:-}"
     if [ -z "$REPO_URL" ]; then
         echo -n "Enter your git repository URL (or press Enter for empty repo): "
@@ -90,7 +93,7 @@ else
         git clone "$REPO_URL" "${HOME}/database-engine"
         log_success "Repository cloned"
     else
-        log_warn "No repository URL provided — setting up project directory in ${HOME}/database-engine"
+        log_warn "No repository URL — creating project directory"
         mkdir -p "${HOME}/database-engine"
     fi
     PROJECT_DIR="${HOME}/database-engine"
@@ -98,7 +101,7 @@ else
 fi
 
 cd "$PROJECT_DIR"
-REPO_DIR="$PROJECT_DIR"   # absolute path
+REPO_DIR="$PROJECT_DIR"
 
 # ── Step 1: Install Docker ─────────────────────────────────────────────────────
 
@@ -106,21 +109,17 @@ log_step "1. Installing Docker"
 
 if ! command -v docker &>/dev/null; then
     log_info "Docker not found — installing..."
-
-    # Remove old versions if present
     sudo apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
 
     sudo apt-get update -qq
     sudo apt-get install -y -qq \
         apt-transport-https ca-certificates curl gnupg lsb-release ufw 2>&1 | tail -3
 
-    # Add Docker's official GPG key
     sudo install -m 0755 -d /etc/apt/keyrings
     sudo curl -fsSL "https://download.docker.com/linux/$(lsb_release -is | tr '[:upper:]' '[:lower:]')/gpg" \
         | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null
     sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
-    # Add Docker repo
     DISTRO="$(lsb_release -is | tr '[:upper:]' '[:lower:]')"
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${DISTRO} $(lsb_release -cs) stable" \
         | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
@@ -132,7 +131,6 @@ else
     log_success "Docker already installed: $(docker --version)"
 fi
 
-# Start and enable Docker
 sudo systemctl enable --now docker 2>/dev/null || true
 if ! sudo docker ps &>/dev/null; then
     log_error "Docker daemon is not running. Try: sudo systemctl start docker"
@@ -140,12 +138,10 @@ if ! sudo docker ps &>/dev/null; then
 fi
 log_success "Docker daemon is running"
 
-# Add current user to docker group (so we don't need sudo for docker commands)
 if ! groups | grep -q '\bdocker\b'; then
     log_info "Adding $(whoami) to docker group..."
     sudo usermod -aG docker "$(whoami)"
-    log_warn "Docker group membership will take effect on next login."
-    log_warn "For this session, some commands may need 'sudo'."
+    log_warn "Docker group membership takes effect on next login."
 fi
 
 # ── Step 2: Docker Compose ─────────────────────────────────────────────────────
@@ -173,7 +169,6 @@ cd "$REPO_DIR"
 if [ -d ".git" ]; then
     CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
     log_info "Current branch: ${CURRENT_BRANCH}"
-    log_info "Pulling latest changes..."
     if git diff --quiet && git diff --cached --quiet; then
         git pull origin "${CURRENT_BRANCH}" --ff
         log_success "Code updated to latest"
@@ -181,101 +176,79 @@ if [ -d ".git" ]; then
         log_warn "Local changes detected — stashing before pull..."
         git stash
         git pull origin "${CURRENT_BRANCH}" --ff
-        log_success "Code updated — your local changes are stashed (git stash pop to restore)"
+        log_success "Code updated — local changes stashed (git stash pop to restore)"
     fi
 else
     log_warn "Not a git repository — skipping git pull"
 fi
 
-# ── Step 4: Generate Secure Secrets ─────────────────────────────────────────
+# ── Step 4: Configure .env ────────────────────────────────────────────────────
 
-log_step "4. Configuring Secrets"
+log_step "4. Configuring .env"
 
-# Only generate if not already configured
-if ! grep -q "your_refresh_token\|_here\|changeme\|your_api_key\|your_api_secret" .env 2>/dev/null; then
-    log_info ".env appears to be configured — skipping secret generation"
-else
-    log_warn ".env contains placeholder values. Generating secure defaults..."
-    # Generate strong random secrets
-    TS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
-    SESSION_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")
-    ADMIN_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(16))")
+if [ ! -f ".env" ]; then
+    if [ -f ".env.example" ]; then
+        cp .env.example .env
+        log_warn ".env created from .env.example — please fill in your credentials:"
+        log_warn "  nano ${REPO_DIR}/.env"
+    fi
+fi
 
-    # Update .env with strong defaults
-    python3 - << PYEOF
-import re, os
-
-env_path = os.path.join("$REPO_DIR", ".env")
-with open(env_path) as f:
-    content = f.read()
-
-replacements = [
-    (r'UPSTOX_REFRESH_TOKEN=.*', f'UPSTOX_REFRESH_TOKEN=your_refresh_token_here'),
-    (r'ADMIN_PASSWORD=.*', f'ADMIN_PASSWORD={os.environ.get("ADMIN_PW", "$ADMIN_PASSWORD")}'),
-    (r'SESSION_SECRET=.*', f'SESSION_SECRET={os.environ.get("SESSION_S", "$SESSION_SECRET")}'),
-]
-# Apply only to placeholder lines (keep real values)
-for pattern, repl in replacements:
-    content = re.sub(pattern, repl, content)
-
-with open(env_path, 'w') as f:
-    f.write(content)
-PYEOF
-    log_warn "Please edit .env and set your real credentials:"
-    log_warn "  nano ${REPO_DIR}/.env"
+# Warn about incomplete .env
+if [ -f ".env" ]; then
+    MISSING=""
+    for VAR in UPSTOX_ACCESS_TOKEN UPSTOX_API_KEY UPSTOX_API_SECRET SUPABASE_URL SUPABASE_KEY; do
+        VALUE=$(grep "^${VAR}=" .env 2>/dev/null | cut -d= -f2-)
+        if [ -z "$VALUE" ] || echo "$VALUE" | grep -qE "your_|your-|_here|placeholder"; then
+            MISSING="${MISSING} ${VAR}"
+        fi
+    done
+    if [ -n "$MISSING" ]; then
+        log_warn "Potentially incomplete .env:${MISSING}"
+    fi
 fi
 
 # ── Step 5: Security Hardening ────────────────────────────────────────────────
 
 log_step "5. VPS Security Hardening"
 
-# 5a. UFW Firewall — only SSH, HTTP, HTTPS
+# UFW Firewall
 log_info "Configuring UFW firewall..."
 if ! sudo ufw status | grep -q "Status: active"; then
     sudo ufw default deny incoming
     sudo ufw default allow outgoing
-    sudo ufw allow ssh comment 'SSH (change port if non-standard)'
-    sudo ufw allow http comment 'HTTP (web dashboard)'
-    sudo ufw allow https comment 'HTTPS (web dashboard)'
+    sudo ufw allow ssh comment 'SSH'
+    sudo ufw allow http comment 'HTTP (Nginx)'
+    sudo ufw allow https comment 'HTTPS (SSL)'
     sudo ufw --force enable
     log_success "UFW firewall enabled (SSH, HTTP, HTTPS only)"
 else
     log_success "UFW already active"
 fi
 
-# 5b. SSH hardening — check for insecure settings
+# SSH hardening
 log_info "Checking SSH configuration..."
 if [ -f /etc/ssh/sshd_config ]; then
-    # Warn if password auth is still enabled
     if grep -qE "^\s*PasswordAuthentication\s+yes" /etc/ssh/sshd_config 2>/dev/null; then
-        log_warn "SSH PasswordAuthentication is enabled."
-        log_warn "  For production: use SSH key-only auth and set:"
-        log_warn "  echo 'PasswordAuthentication no' | sudo tee -a /etc/ssh/sshd_config"
-        log_warn "  sudo systemctl restart sshd"
+        log_warn "SSH PasswordAuthentication is enabled — recommend SSH key-only auth for production."
     fi
-    # Warn if root login is enabled
     if grep -qE "^\s*PermitRootLogin\s+yes" /etc/ssh/sshd_config 2>/dev/null; then
-        log_warn "SSH PermitRootLogin is yes — consider disabling for production."
+        log_warn "SSH PermitRootLogin is yes — recommend disabling for production."
     fi
 fi
 
-# 5c. Check for SSH backdoors
-log_info "Checking for unexpected SSH authorized_keys..."
+# SSH authorized_keys check
 ROOT_AK="/root/.ssh/authorized_keys"
-if [ -f "$ROOT_AK" ]; then
-    ROOT_KEY_COUNT=$(wc -l < "$ROOT_AK" | tr -d ' ')
-    if [ "$ROOT_KEY_COUNT" -gt 0 ]; then
-        log_warn "Found ${ROOT_KEY_COUNT} key(s) in ${ROOT_AK}"
-        log_warn "  Review with: sudo cat ${ROOT_AK}"
-    fi
+if [ -f "$ROOT_AK" ] && [ "$(wc -l < "$ROOT_AK" | tr -d ' ')" -gt 0 ]; then
+    log_warn "Found $(wc -l < "$ROOT_AK" | tr -d ' ') key(s) in ${ROOT_AK} — review with: sudo cat ${ROOT_AK}"
 fi
 
-# 5d. Docker daemon security — prevent container from gaining host privileges
+# Docker daemon
 log_info "Verifying Docker daemon configuration..."
 if grep -q '"live-restore":\s*true' /etc/docker/daemon.json 2>/dev/null; then
     log_success "Docker live-restore is enabled"
 else
-    log_info "Adding Docker live-restore (keeps containers running after daemon restart)..."
+    log_info "Adding Docker live-restore + log rotation..."
     sudo mkdir -p /etc/docker
     sudo tee /etc/docker/daemon.json > /dev/null << 'EOF'
 {
@@ -289,118 +262,270 @@ else
 }
 EOF
     sudo systemctl restart docker
-    log_success "Docker daemon configured with log rotation + live-restore"
+    log_success "Docker daemon configured"
 fi
 
-# ── Step 6: Build & Start Services ───────────────────────────────────────────
+# ── Step 6: Nginx Reverse Proxy ──────────────────────────────────────────────
 
-log_step "6. Building Docker Images"
+log_step "6. Nginx Reverse Proxy Setup"
+
+# Install Nginx
+if ! command -v nginx &>/dev/null; then
+    log_info "Installing Nginx..."
+    sudo apt-get install -y -qq nginx 2>&1 | tail -3
+    log_success "Nginx installed"
+else
+    log_success "Nginx already installed: $(nginx -v 2>&1)"
+fi
+
+# Generate Nginx config
+NGINX_SITE_FILE="/etc/nginx/sites-available/${DOMAIN}"
+NGINX_ENABLED_FILE="/etc/nginx/sites-enabled/${DOMAIN}"
+
+log_info "Configuring Nginx for ${DOMAIN} → localhost:${WEB_PORT}..."
+
+sudo tee "$NGINX_SITE_FILE" > /dev/null << NGINX_EOF
+# HTTP — redirect all traffic to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    # Certbot will add challenge locations here automatically
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+
+    # Let's Encrypt ACME challenge — allow access without redirect
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+}
+
+# HTTPS — reverse proxy to Docker web container
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${DOMAIN};
+
+    # SSL certificate will be added by Certbot
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Proxy to Docker web container
+    location / {
+        proxy_pass http://127.0.0.1:${WEB_PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 300;
+        proxy_connect_timeout 75;
+
+        # WebSocket support (if needed by the admin panel)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Block sensitive paths
+    location ~ /\. { deny all; }
+}
+NGINX_EOF
+
+log_success "Nginx config written to ${NGINX_SITE_FILE}"
+
+# Disable default site if it conflicts
+if [ -f /etc/nginx/sites-enabled/default ]; then
+    sudo rm -f /etc/nginx/sites-enabled/default
+    log_info "Removed default Nginx site"
+fi
+
+# Enable our site
+sudo ln -sf "$NGINX_SITE_FILE" "$NGINX_ENABLED_FILE"
+
+# Test and reload Nginx
+if sudo nginx -t 2>&1 | grep -qE "(syntax is ok|test is successful)"; then
+    log_success "Nginx config syntax OK"
+    sudo systemctl reload nginx
+    log_success "Nginx reloaded"
+else
+    log_error "Nginx config test failed:"
+    sudo nginx -t 2>&1
+    exit 1
+fi
+
+# ── Step 7: SSL Certificate (Let's Encrypt) ─────────────────────────────────────
+
+log_step "7. SSL Certificate — Let's Encrypt"
+
+# Check if SSL is already configured for this domain
+SSL_CERT="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+if [ -f "$SSL_CERT" ]; then
+    log_success "SSL certificate already exists for ${DOMAIN}"
+    SSL_STATUS="existing"
+else
+    log_info "No existing SSL cert for ${DOMAIN} — requesting new certificate..."
+
+    # Verify domain resolves to this server
+    DOMAIN_IP=$(dig +short "${DOMAIN}" 2>/dev/null | tail -1 || echo "")
+    SERVER_IP=$(curl -sf https://api.ipify.org 2>/dev/null || echo "")
+
+    if [ -n "$DOMAIN_IP" ] && [ -n "$SERVER_IP" ]; then
+        if [ "$DOMAIN_IP" != "$SERVER_IP" ]; then
+            log_warn "DNS check: ${DOMAIN} resolves to ${DOMAIN_IP}, but this server is ${SERVER_IP}"
+            log_warn "Make sure DNS A record for ${DOMAIN} points to ${SERVER_IP} before continuing."
+            log_warn "Skipping SSL setup. Run this script again once DNS is propagated."
+            SSL_STATUS="dns_mismatch"
+        else
+            log_success "DNS check passed: ${DOMAIN} → ${SERVER_IP}"
+            SSL_STATUS="needs_cert"
+        fi
+    else
+        log_warn "Could not verify DNS — proceeding with SSL setup anyway"
+        SSL_STATUS="needs_cert"
+    fi
+
+    if [ "$SSL_STATUS" = "needs_cert" ]; then
+        # Install Certbot
+        if ! command -v certbot &>/dev/null; then
+            log_info "Installing Certbot..."
+            sudo apt-get install -y -qq certbot python3-certbot-nginx 2>&1 | tail -3
+            log_success "Certbot installed"
+        else
+            log_success "Certbot already installed"
+        fi
+
+        # Create ACME challenge directory
+        sudo mkdir -p /var/www/html/.well-known/acme-challenge
+        echo "Let's Encrypt challenge directory ready" | sudo tee /var/www/html/.well-known/acme-challenge/.placeholder > /dev/null
+
+        # Request certificate (standalone mode — Nginx serves HTTP on port 80)
+        log_info "Requesting SSL certificate for ${DOMAIN}..."
+        log_info "This will verify domain ownership via Let's Encrypt."
+
+        if sudo certbot certonly \
+            --nginx \
+            --non-interactive \
+            --agree-tos \
+            --email "noreply@${DOMAIN}" \
+            --domains "${DOMAIN}" \
+            --keep-until-expiring \
+            2>&1 | grep -qE "(Congratulations|renewed)"; then
+            log_success "SSL certificate obtained successfully!"
+            SSL_STATUS="installed"
+        else
+            log_warn "Certbot failed — SSL will be attempted on next run."
+            log_warn "Common cause: DNS not yet propagated. Run 'sudo certbot --nginx -d ${DOMAIN}' after DNS is ready."
+            SSL_STATUS="failed"
+        fi
+    fi
+fi
+
+# If cert was installed, update Nginx to use it and reload
+if [ "$SSL_STATUS" = "installed" ] && [ -f "$SSL_CERT" ]; then
+    log_info "Updating Nginx with SSL certificate paths..."
+    sudo certbot --nginx --deploy-hook "systemctl reload nginx" \
+        --non-interactive --agree-tos \
+        --domains "${DOMAIN}" \
+        2>&1 | tail -5 || true
+
+    # Ensure auto-renewal is enabled
+    sudo systemctl enable certbot.timer 2>/dev/null || true
+    sudo certbot renew --dry-run 2>&1 | grep -qE "(renewal|Congratulations)" && \
+        log_success "SSL auto-renewal is configured" || \
+        log_warn "SSL auto-renewal may need attention"
+fi
+
+# ── Step 8: Build & Start Services ───────────────────────────────────────────
+
+log_step "8. Building Docker Images"
 
 cd "$REPO_DIR"
 
 if [ ! -f ".env" ]; then
-    if [ -f ".env.example" ]; then
-        log_info "Creating .env from .env.example..."
-        cp .env.example .env
-    fi
-    log_warn ".env created — please fill in your credentials: nano .env"
-    log_error "Cannot start services without configured .env. Please run setup again after editing."
+    log_error ".env missing — cannot start services. Please create it first."
     exit 1
 fi
 
-# Validate critical env vars
-log_info "Validating .env configuration..."
-MISSING=""
-for VAR in UPSTOX_ACCESS_TOKEN UPSTOX_API_KEY UPSTOX_API_SECRET SUPABASE_URL SUPABASE_KEY; do
-    VALUE=$(grep "^${VAR}=" .env 2>/dev/null | cut -d= -f2-)
-    if [ -z "$VALUE" ] || echo "$VALUE" | grep -qE "your_|your-|_here|placeholder"; then
-        MISSING="${MISSING} ${VAR}"
-    fi
-done
-
-if [ -n "$MISSING" ]; then
-    log_warn "The following variables may not be configured:${MISSING}"
-    log_warn "Edit .env before deploying: nano .env"
+log_info "Building Docker images (may take a few minutes)..."
+if docker compose -p "$PROJECT_NAME" build 2>&1 | tail -5; then
+    log_success "Docker images built"
+else
+    log_error "Docker build failed — check Dockerfile and requirements.txt"
+    exit 1
 fi
 
-# Build images
-log_info "Building Docker images (this may take a few minutes)..."
-docker compose -p "$PROJECT_NAME" build --no-cache 2>&1 | tail -10
+# ── Step 9: Start Services ───────────────────────────────────────────────────
 
-# ── Step 7: Start Services ───────────────────────────────────────────────────
-
-log_step "7. Starting Services"
+log_step "9. Starting Services"
 
 docker compose -p "$PROJECT_NAME" up -d
 
 log_info "Waiting for containers to start..."
-sleep 8
+sleep 10
 
-# ── Step 8: Verify Health ─────────────────────────────────────────────────────
+# ── Step 10: Verify Everything ────────────────────────────────────────────────
 
-log_step "8. Verifying Deployment"
+log_step "10. Verifying Deployment"
 
-CONTAINER_STATUS=$(docker compose -p "$PROJECT_NAME" ps --format json 2>/dev/null | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    if isinstance(data, list):
-        for c in data:
-            name = c.get('Name', c.get('Service', '?'))
-            state = c.get('State', '?')
-            print(f'{name}: {state}')
-    else:
-        print(data)
-except:
-    print('Could not parse container status')
-" 2>/dev/null || docker compose -p "$PROJECT_NAME" ps)
+# Docker containers
+CONTAINERS=$(docker compose -p "$PROJECT_NAME" ps 2>/dev/null)
+echo "$CONTAINERS"
 
-echo "$CONTAINER_STATUS"
+ENGINE_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' db_engine 2>/dev/null || echo "unknown")
+WEB_RUNNING=$(docker inspect --format='{{.State.Status}}' db_web 2>/dev/null || echo "unknown")
 
-# Check engine health
-ENGINE_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' db_engine 2>/dev/null || echo "no healthcheck")
 if [ "$ENGINE_HEALTH" = "healthy" ]; then
-    log_success "Engine container is healthy"
-elif [ "$ENGINE_HEALTH" = "starting" ] || [ "$ENGINE_HEALTH" = "no healthcheck" ]; then
-    log_info "Engine status: ${ENGINE_HEALTH} — logs may show initialization"
-else
-    log_error "Engine health: ${ENGINE_HEALTH} — check with: docker compose -p ${PROJECT_NAME} logs engine"
+    log_success "Engine: healthy"
+elif [ "$ENGINE_HEALTH" != "unknown" ]; then
+    log_info "Engine: ${ENGINE_HEALTH}"
 fi
 
-# Check web health
-WEB_STATUS=$(docker inspect --format='{{.State.Status}}' db_web 2>/dev/null || echo "not found")
-if [ "$WEB_STATUS" = "running" ]; then
-    log_success "Web dashboard is running"
+if [ "$WEB_RUNNING" = "running" ]; then
+    log_success "Web dashboard: running"
 else
-    log_warn "Web dashboard status: ${WEB_STATUS}"
+    log_warn "Web dashboard: ${WEB_RUNNING}"
+fi
+
+# Nginx
+if systemctl is-active --quiet nginx 2>/dev/null; then
+    log_success "Nginx: running"
+else
+    log_error "Nginx is not running: sudo systemctl status nginx"
+fi
+
+# SSL
+if [ -f "$SSL_CERT" ]; then
+    SSL_EXPIRY=$(sudo openssl x509 -noout -enddate -in "$SSL_CERT" 2>/dev/null | cut -d= -f2 || echo "unknown")
+    log_success "SSL certificate present (expires: ${SSL_EXPIRY})"
+else
+    log_warn "No SSL certificate found — HTTPS may not work yet"
 fi
 
 # ── Done ───────────────────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}══════════════════════════════════════════════════════════════════${NC}"
 echo -e "${GREEN}  Database Engine — Deployed Successfully!${NC}"
-echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}══════════════════════════════════════════════════════════════════${NC}"
+echo ""
+echo -e "  ${CYAN}HTTPS://${DOMAIN}${NC}     ← Your web dashboard"
+echo -e "  ${CYAN}http://${DOMAIN}/health${NC} ← Engine health check"
 echo ""
 echo -e "  Project:     ${CYAN}${REPO_DIR}${NC}"
-echo -e "  Web Panel:   ${CYAN}http://$(curl -sf https://api.ipify.org 2>/dev/null || echo 'YOUR_VPS_IP'):8000${NC}"
 echo -e "  Docker:      ${CYAN}docker compose -p ${PROJECT_NAME} ps${NC}"
-echo -e "  Logs:        ${CYAN}docker compose -p ${PROJECT_NAME} logs -f${NC}"
+echo -e "  Engine logs: ${CYAN}docker compose -p ${PROJECT_NAME} logs -f engine${NC}"
+echo -e "  All logs:    ${CYAN}docker compose -p ${PROJECT_NAME} logs -f${NC}"
+echo -e "  Restart:     ${CYAN}docker compose -p ${PROJECT_NAME} restart${NC}"
 echo -e "  Stop:        ${CYAN}docker compose -p ${PROJECT_NAME} down${NC}"
-echo -e "  Restart:    ${CYAN}docker compose -p ${PROJECT_NAME} restart${NC}"
 echo ""
-echo -e "  ${YELLOW}IMPORTANT: Change ADMIN_PASSWORD in .env before production use!${NC}"
-echo -e "  ${YELLOW}IMPORTANT: Set UPSTOX_REFRESH_TOKEN in .env for auto token refresh!${NC}"
+echo -e "${YELLOW}  Action required: Change ADMIN_PASSWORD in .env before production use${NC}"
+echo -e "${YELLOW}  Action required: Set UPSTOX_REFRESH_TOKEN in .env for auto token refresh${NC}"
 echo ""
-echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
-
-# ── Post-deployment reminder ────────────────────────────────────────────────────
-
-if [ -n "$MISSING" ]; then
-    echo ""
-    log_warn "Incomplete .env detected — edit and restart:"
-    echo "  nano ${REPO_DIR}/.env"
-    echo "  docker compose -p ${PROJECT_NAME} restart"
-fi
+echo -e "${GREEN}══════════════════════════════════════════════════════════════════${NC}"
 
 exit 0
