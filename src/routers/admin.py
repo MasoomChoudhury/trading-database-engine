@@ -21,7 +21,7 @@ def check_upstox_health():
         response = requests.get("https://api.upstox.com/v2/market-quote/quotes?instrument_key=NSE_EQ|INE002A01018", timeout=2)
         # Even a 401 is technically 'Healthy' in terms of connectivity
         return "Healthy" if response.status_code in [200, 401] else "Degraded"
-    except:
+    except Exception:
         return "Offline"
 
 def check_db_health():
@@ -31,7 +31,7 @@ def check_db_health():
         if not db.supabase: return "Mocked (Dry-Run)"
         # Simple select 1
         return "Connected"
-    except:
+    except Exception:
         return "Disconnected"
 
 def check_ws_health():
@@ -53,7 +53,7 @@ def check_ws_health():
                 return "Stalled"
             else:
                 return "Stopped"
-    except:
+    except Exception:
         return "Error"
 
 @router.get("/health", response_class=HTMLResponse)
