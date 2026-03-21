@@ -31,11 +31,11 @@ services:
     # Graceful shutdown: trap SIGTERM → Python exit
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8001/health || exit 1"]
-      interval: 5m
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1"]
+      interval: 1m
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
     command: ["src/main.py"]
     # Mount .env as a volume so token refreshes persist without rebuild
     volumes:
@@ -60,7 +60,7 @@ services:
       - "8000:8000"
     stop_grace_period: 10s
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/')\" || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
