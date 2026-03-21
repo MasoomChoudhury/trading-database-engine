@@ -126,6 +126,10 @@ async function loadLogs() {
     const resp = await fetch('/admin/logs');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     rawLogText = await resp.text();
+    if (!rawLogText.trim()) {
+      container.innerHTML = '<div class="log-loading">No logs available.</div>';
+      return;
+    }
     renderLogs(rawLogText);
   } catch (e) {
     container.innerHTML = '<div class="log-loading" style="color:var(--danger)">Failed to load logs: ' + e.message + '</div>';
@@ -136,7 +140,8 @@ async function loadLogs() {
 function renderLogs(text) {
   const container = document.getElementById('logs-container');
   const lines = text.split('\n');
-  const timeMatch = /(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})/.source;
+  // Matches: ISO 8601 (with/without timezone), Docker timestamps, syslog
+  const timeMatch = /(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?|[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/.source;
   const levelMatch = /\b(INFO|WARN|WARNING|ERROR|DEBUG)\b/.source;
 
   container.innerHTML = lines.map(line => {
