@@ -3,44 +3,236 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Nifty Data Engine Admin{% endblock %}</title>
+    <title>{% block title %}Data Engine{% endblock %}</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- HTMX -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <!-- Alpine JS -->
-    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <!-- TradingView Lightweight Charts (Pinned Version for Stability) -->
-    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    
+
+    {% block styles %}{% endblock %}
+
     <style>
-        .glass {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #09090b; --surface: #18181b; --hover: #27272a;
+            --border: #27272a; --text: #fff; --muted: #71717a;
+            --dim: #52525b; --accent: #8b5cf6; --accent-h: #7c3aed;
+            --success: #22c55e; --warning: #eab308; --danger: #ef4444;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        /* Nav bar */
+        .nav-bar {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 48px;
+            background: #111;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 16px;
+            z-index: 100;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            flex-shrink: 0;
+        }
+
+        .nav-logo-mark {
+            width: 20px;
+            height: 20px;
+            background: var(--accent);
+            border-radius: 4px;
+        }
+
+        .nav-logo-text {
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .nav-logo-text span { color: var(--accent); }
+
+        .nav-tabs {
+            display: flex;
+            gap: 2px;
+            flex: 1;
+            justify-content: center;
+        }
+
+        .nav-tab {
+            background: none;
+            border: none;
+            color: var(--dim);
+            font-size: 13px;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        .nav-tab:hover { color: var(--muted); background: var(--hover); }
+        .nav-tab.active { color: var(--text); background: var(--surface); }
+
+        .nav-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .nav-user-name { color: var(--muted); font-size: 12px; }
+        .btn-logout {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--dim);
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+        .btn-logout:hover { border-color: var(--danger); color: var(--danger); }
+
+        .nav-hamburger {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        /* Tab content */
+        .main-content {
+            padding-top: 48px;
+            min-height: 100vh;
+        }
+
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .nav-tabs {
+                display: none;
+                position: fixed;
+                top: 48px;
+                left: 0; right: 0;
+                background: #111;
+                border-bottom: 1px solid var(--border);
+                flex-direction: column;
+                padding: 8px;
+                gap: 2px;
+            }
+            .nav-tabs.open { display: flex; }
+            .nav-hamburger { display: flex; }
+            .nav-user { display: none; }
+        }
+
+        /* Button variants */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            border: none;
+            text-decoration: none;
+            transition: all 0.15s;
+        }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-h); }
+        .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+        .btn-secondary:hover { border-color: var(--hover); color: var(--text); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover { opacity: 0.9; }
+
+        /* Card */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
         }
     </style>
 </head>
-<body class="bg-[#0f172a] text-slate-200 min-h-screen font-sans">
-    
-    <nav class="border-b border-slate-800 p-4 mb-8 bg-[#1e293b]/50 backdrop-blur-sm sticky top-0 z-50">
-        <div class="container mx-auto flex justify-between items-center">
-            <div class="flex items-center space-x-3">
-                <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white">N</div>
-                <h1 class="text-xl font-bold tracking-tight text-white hover:text-blue-400 transition-colors">Data Engine <span class="text-blue-500">v2</span></h1>
-            </div>
-            {% if request.session.user %}
-            <div class="flex items-center space-x-6">
-                <span class="text-sm text-slate-400">Welcome, <span class="text-slate-200 font-medium">{{ request.session.user }}</span></span>
-                <a href="/auth/logout" class="text-xs uppercase tracking-widest bg-slate-800 hover:bg-red-900/40 hover:text-red-400 border border-slate-700 px-3 py-1.5 rounded-md transition-all">Logout</a>
-            </div>
-            {% endif %}
-        </div>
-    </nav>
+<body>
 
-    <main class="container mx-auto px-4 pb-20">
+    {% block show_nav %}{% endblock %}
+
+    {% if show_nav is not false %}
+    <nav class="nav-bar">
+        <a href="/" class="nav-logo">
+            <div class="nav-logo-mark"></div>
+            <div class="nav-logo-text">Data Engine <span>v2</span></div>
+        </a>
+        <div class="nav-tabs" id="nav-tabs">
+            <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
+            <button class="nav-tab" data-tab="config">Config</button>
+            <button class="nav-tab" data-tab="maintenance">Maintenance</button>
+            <button class="nav-tab" data-tab="logs">Logs</button>
+        </div>
+        <div class="nav-user">
+            <span class="nav-user-name">{{ request.session.user }}</span>
+            <a href="/auth/logout" class="btn-logout">Logout</a>
+        </div>
+        <button class="nav-hamburger" id="nav-hamburger" aria-label="Menu">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <rect y="4" width="20" height="2" rx="1" fill="currentColor"/>
+                <rect y="9" width="20" height="2" rx="1" fill="currentColor"/>
+                <rect y="14" width="20" height="2" rx="1" fill="currentColor"/>
+            </svg>
+        </button>
+    </nav>
+    {% endif %}
+
+    <div class="main-content">
         {% block content %}{% endblock %}
-    </main>
+    </div>
+
+    <script>
+    // Tab switching
+    document.querySelectorAll('.nav-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            const tab = btn.dataset.tab;
+            document.getElementById('tab-' + tab)?.classList.add('active');
+            document.getElementById('nav-tabs')?.classList.remove('open');
+        });
+    });
+
+    // Hamburger menu
+    const hamburger = document.getElementById('nav-hamburger');
+    hamburger?.addEventListener('click', () => {
+        document.getElementById('nav-tabs')?.classList.toggle('open');
+    });
+    </script>
 
     {% block scripts %}{% endblock %}
 </body>
