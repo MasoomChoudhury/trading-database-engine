@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 try:
     import pandas_ta as ta
@@ -5,52 +6,67 @@ except ImportError:
     print("Warning: pandas_ta not found. Technical indicators will be skipped.")
     ta = None
 
+# Module constant: NIFTY lot size (standard for Indian markets)
+LOT_SIZE = 25
+
+logger = logging.getLogger(__name__)
+
+
 class CalculationEngine:
     def __init__(self):
-        print("Initialized 5-Min Calculation Engine.")
+        logger.info("Initialized 5-Min Calculation Engine.")
 
     def compute_standard_indicators(self, df: pd.DataFrame):
         """
         Calculates standard technical indicators using pandas-ta.
         Requires a DataFrame with 'open', 'high', 'low', 'close', 'volume' columns.
         """
+        if not isinstance(df, pd.DataFrame):
+            logger.error(f"[compute_standard_indicators] Invalid input: expected DataFrame, got {type(df)}")
+            return df
         if df.empty or len(df) < 20: # Need enough data for EMAs
             return df
-            
+
+        # Create a copy to avoid mutating the caller's DataFrame
+        df = df.copy()
+
         # Ensure column names are correct for pandas-ta
         df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
-        
-        # Calculate RSI
-        df.ta.rsi(length=14, append=True)
-        
-        # Calculate EMAs and SMAs
-        df.ta.ema(length=20, append=True) # Keep 20 if used elsewhere
-        df.ta.ema(length=21, append=True)
-        df.ta.ema(length=50, append=True)
-        df.ta.sma(length=200, append=True)
-        
-        # Calculate MACD
-        df.ta.macd(fast=12, slow=26, signal=9, append=True)
-        
-        # Calculate Bollinger Bands
-        df.ta.bbands(length=20, std=2.0, append=True)
-        
-        # Calculate Supertrend
-        # length=7, multiplier=3.0 are common intraday settings
-        df.ta.supertrend(length=7, multiplier=3.0, append=True)
-        
-        # Calculate Stochastic RSI
-        # length=14, rsi_length=14, k=3, d=3
-        df.ta.stochrsi(length=14, rsi_length=14, k=3, d=3, append=True)
-        
-        # Calculate ADX
-        # length=14 is standard
-        df.ta.adx(length=14, append=True)
-        
-        # Calculate ATR
-        # length=14 is standard
-        df.ta.atr(length=14, append=True)
-        
+
+        try:
+            # Calculate RSI
+            df.ta.rsi(length=14, append=True)
+
+            # Calculate EMAs and SMAs
+            df.ta.ema(length=20, append=True) # Keep 20 if used elsewhere
+            df.ta.ema(length=21, append=True)
+            df.ta.ema(length=50, append=True)
+            df.ta.sma(length=200, append=True)
+
+            # Calculate MACD
+            df.ta.macd(fast=12, slow=26, signal=9, append=True)
+
+            # Calculate Bollinger Bands
+            df.ta.bbands(length=20, std=2.0, append=True)
+
+            # Calculate Supertrend
+            # length=7, multiplier=3.0 are common intraday settings
+            df.ta.supertrend(length=7, multiplier=3.0, append=True)
+
+            # Calculate Stochastic RSI
+            # length=14, rsi_length=14, k=3, d=3
+            df.ta.stochrsi(length=14, rsi_length=14, k=3, d=3, append=True)
+
+            # Calculate ADX
+            # length=14 is standard
+            df.ta.adx(length=14, append=True)
+
+            # Calculate ATR
+            # length=14 is standard
+            df.ta.atr(length=14, append=True)
+        except Exception as e:
+            logger.error(f"[compute_standard_indicators] Error calculating indicators: {e}")
+
         # Calculate VWAP
         try:
             # VWAP requires datetime index
@@ -60,7 +76,7 @@ class CalculationEngine:
                     df.set_index('timestamp', inplace=True)
             df.ta.vwap(append=True)
         except Exception as e:
-            print(f"Failed to calculate VWAP: {e}")
+            logger.error(f"[compute_standard_indicators] Failed to calculate VWAP: {e}")
 
         # Revert column names back to lowercase for database mapping
         df.columns = df.columns.str.lower()
@@ -77,12 +93,11 @@ class CalculationEngine:
         Net GEX = Sum(Call GEX) + Sum(Put GEX)
         """
         if not option_chain_data:
-            print("Missing Option Chain data, returning Net GEX 0.0.")
+            logger.warning("[compute_net_gex] Missing Option Chain data, returning Net GEX 0.0.")
             return 0.0
-            
-        lot_size = 25 # Assuming standard NIFTY lot size
+
         total_net_gex = 0.0
-        
+
         try:
             for strike_data in option_chain_data:
                 # Call Evaluation
@@ -95,7 +110,7 @@ class CalculationEngine:
                     c_oi = c_market.get('oi')
                     
                     if c_gamma is not None and c_oi is not None:
-                        total_net_gex += (c_gamma * c_oi * spot_price * lot_size)
+                        total_net_gex += (c_gamma * c_oi * spot_price * LOT_SIZE)
                 
                 # Put Evaluation
                 p_options = strike_data.get('put_options')
@@ -108,12 +123,12 @@ class CalculationEngine:
                     
                     if p_gamma is not None and p_oi is not None:
                         # Negative multiplier for puts (dealer delta hedging acts against trend)
-                        total_net_gex += (p_gamma * p_oi * spot_price * lot_size * -1.0)
+                        total_net_gex += (p_gamma * p_oi * spot_price * LOT_SIZE * -1.0)
                         
             return round(total_net_gex, 4)
             
         except Exception as e:
-            print(f"Error computing Net GEX from live options: {e}")
+            logger.error(f"[compute_net_gex] Error computing Net GEX from live options: {e}")
             return 0.0
 
     def compute_opening_range_status(self, df: pd.DataFrame, current_timestamp: pd.Timestamp, range_minutes: int = 15):
@@ -196,7 +211,7 @@ class CalculationEngine:
             else:
                 return "Inside CPR"
         except Exception as e:
-            print(f"Error calculating CPR: {e}")
+            logger.error(f"[compute_cpr_status] Error calculating CPR: {e}")
             return "Error: Calc Failed"
 
     def compute_cpr_width(self, prev_day_high: float, prev_day_low: float, prev_day_close: float):
@@ -209,15 +224,21 @@ class CalculationEngine:
         """
         try:
             pivot = (prev_day_high + prev_day_low + prev_day_close) / 3.0
+
+            # Check for division by zero
+            if pivot == 0:
+                logger.error("[compute_cpr_width] Pivot is 0, cannot calculate CPR width")
+                return "Error"
+
             bc = (prev_day_high + prev_day_low) / 2.0
             tc = (pivot - bc) + pivot
-            
+
             cpr_top = max(tc, bc)
             cpr_bottom = min(tc, bc)
-            
+
             # Calculate width as a percentage of the central pivot
             cpr_width_pct = ((cpr_top - cpr_bottom) / pivot) * 100
-            
+
             if cpr_width_pct < 0.15:
                 return "Narrow"
             elif cpr_width_pct > 0.35:
@@ -225,7 +246,7 @@ class CalculationEngine:
             else:
                 return "Average"
         except Exception as e:
-            print(f"Error calculating CPR Width: {e}")
+            logger.error(f"[compute_cpr_width] Error calculating CPR Width: {e}")
             return "Error: Calc Failed"
 
     def compute_vwap_status_dict(self, current_price: float, current_vwap: float):
@@ -255,7 +276,7 @@ class CalculationEngine:
                 "vwap_dist_pct": round(dist_pct, 4)
             }
         except Exception as e:
-            print(f"Error calculating VWAP status: {e}")
+            logger.error(f"[compute_vwap_status_dict] Error calculating VWAP status: {e}")
             return {
                 "price_vs_vwap": "Error",
                 "vwap_dist_pct": 0.0
@@ -322,9 +343,13 @@ class CalculationEngine:
                 # Calculate Divergence
                 divergence = current_price - anchored_vwap
                 result["divergence"] = round(divergence, 2)
-                
+
                 # Calculate Reversion Probability base on divergence distance
-                divergence_pct = abs(divergence) / anchored_vwap * 100
+                # Check for division by zero
+                if anchored_vwap == 0:
+                    divergence_pct = 0.0
+                else:
+                    divergence_pct = abs(divergence) / anchored_vwap * 100
                 
                 if divergence_pct > 1.0: # > 1% away from BTST VWAP is extremely extended intraday
                     result["reversion_probability"] = "Extremely High (Extended)"
@@ -338,7 +363,7 @@ class CalculationEngine:
             return result
             
         except Exception as e:
-            print(f"Error calculating Anchored VWAP 15:00: {e}")
+            logger.error(f"[compute_vwap_context_dict] Error calculating Anchored VWAP 15:00: {e}")
             return result
             
     def compute_key_intraday_levels(self, current_price: float, prev_day_high: float, prev_day_low: float):
@@ -349,22 +374,24 @@ class CalculationEngine:
         - "distance_to_pdh_pct": Percentage distance from the current price to the PDH
         """
         try:
-            if not prev_day_high:
+            # Validate prev_day_high before division
+            if not prev_day_high or prev_day_high == 0:
+                logger.error("[compute_key_intraday_levels] prev_day_high is 0 or None")
                 return {
                     "prev_day_high": 0.0,
                     "prev_day_low": 0.0,
                     "distance_to_pdh_pct": 0.0
                 }
-                
+
             dist_pct = ((current_price - prev_day_high) / prev_day_high) * 100.0
-            
+
             return {
                 "prev_day_high": float(prev_day_high),
-                "prev_day_low": float(prev_day_low),
+                "prev_day_low": float(prev_day_low) if prev_day_low else 0.0,
                 "distance_to_pdh_pct": round(dist_pct, 4)
             }
         except Exception as e:
-            print(f"Error calculating Key Intraday Levels: {e}")
+            logger.error(f"[compute_key_intraday_levels] Error calculating Key Intraday Levels: {e}")
             return {
                 "prev_day_high": 0.0,
                 "prev_day_low": 0.0,
@@ -397,7 +424,7 @@ class CalculationEngine:
                 "moc_volume_spike": moc_spike
             }
         except Exception as e:
-            print(f"Error calculating Momentum Burst: {e}")
+            logger.error(f"[compute_momentum_burst_dict] Error calculating Momentum Burst: {e}")
             return {
                 "last_5m_volume_vs_avg": "0.00x",
                 "moc_volume_spike": False
@@ -429,7 +456,7 @@ class CalculationEngine:
                 "pdl": float(prev_day_low) if prev_day_low else 0.0
             }
         except Exception as e:
-            print(f"Error calculating Institutional Context: {e}")
+            logger.error(f"[compute_institutional_context_dict] Error calculating Institutional Context: {e}")
             return {
                 "trend_bias": "Error",
                 "sma_200": 0.0,
@@ -441,30 +468,39 @@ class CalculationEngine:
         """
         Calculates the live VWAP vs Price state for the top 5 NIFTY heavyweights.
         """
-        heavyweights = {
-            "NSE_EQ|INE040A01034": "HDFCBANK",
-            "NSE_EQ|INE002A01018": "RELIANCE",
-            "NSE_EQ|INE090A01021": "ICICIBANK",
-            "NSE_EQ|INE009A01021": "INFY",
-            "NSE_EQ|INE467B01029": "TCS"
-        }
-        
         result = {}
-        for key, symbol in heavyweights.items():
-            if key in quotes:
-                data = quotes[key]
-                last_price = float(data.get('last_price', 0.0))
-                vwap = float(data.get('average_price', 0.0))
-                
-                if last_price > vwap and vwap > 0:
-                    result[symbol] = "Above VWAP (Bullish)"
-                elif last_price < vwap and vwap > 0:
-                    result[symbol] = "Below VWAP (Bearish)"
+        try:
+            if not isinstance(quotes, dict):
+                logger.error(f"[compute_heavyweight_vs_vwap] Invalid quotes type: {type(quotes)}")
+                return result
+
+            heavyweights = {
+                "NSE_EQ|INE040A01034": "HDFCBANK",
+                "NSE_EQ|INE002A01018": "RELIANCE",
+                "NSE_EQ|INE090A01021": "ICICIBANK",
+                "NSE_EQ|INE009A01021": "INFY",
+                "NSE_EQ|INE467B01029": "TCS"
+            }
+
+            for key, symbol in heavyweights.items():
+                if key in quotes:
+                    data = quotes[key]
+                    last_price = float(data.get('last_price', 0.0) or 0)
+                    vwap = float(data.get('average_price', 0.0) or 0)
+
+                    if last_price > vwap and vwap > 0:
+                        result[symbol] = "Above VWAP (Bullish)"
+                    elif last_price < vwap and vwap > 0:
+                        result[symbol] = "Below VWAP (Bearish)"
+                    else:
+                        result[symbol] = "Neutral"
                 else:
-                    result[symbol] = "Neutral"
-            else:
-                result[symbol] = "Unknown"
-                
+                    result[symbol] = "Unknown"
+
+        except Exception as e:
+            logger.error(f"[compute_heavyweight_vs_vwap] Error calculating heavyweight vs VWAP: {e}")
+            return {}
+
         return result
 
     def compute_volume_profile_dict(self, df: pd.DataFrame, current_timestamp: pd.Timestamp):
@@ -576,7 +612,7 @@ class CalculationEngine:
                 "total_volume": int(total_vol)
             }
         except Exception as e:
-            print(f"Error calculating Volume Profile: {e}")
+            logger.error(f"[compute_volume_profile_dict] Error calculating Volume Profile: {e}")
             return {"poc": 0.0, "vah": 0.0, "val": 0.0, "total_volume": 0}
 
     def compute_derived_features_dict(self, df: pd.DataFrame, current_timestamp: pd.Timestamp):
@@ -643,7 +679,7 @@ class CalculationEngine:
             return {"pivots": pivots}
             
         except Exception as e:
-            print(f"Error calculating Derived Features (Pivots): {e}")
+            logger.error(f"[compute_derived_features_dict] Error calculating Derived Features (Pivots): {e}")
             return {"pivots": []}
 
     def compute_meta_dict(self, current_timestamp: pd.Timestamp, latest_close: float):
@@ -715,6 +751,14 @@ class CalculationEngine:
                 }
                 
             today_open = float(today_df.iloc[0]['open'])
+            # Ensure prev_day_close is not zero before division
+            if prev_day_close == 0:
+                logger.error("[compute_catalyst_context_dict] prev_day_close is 0, cannot calculate gap_pct")
+                return {
+                    "day_type": "Unknown",
+                    "gap_pct": 0.0,
+                    "gap_fade_probability": "Unknown"
+                }
             gap_pct = ((today_open - prev_day_close) / prev_day_close) * 100.0
             gap_pct = round(gap_pct, 2)
             
@@ -740,7 +784,7 @@ class CalculationEngine:
             }
             
         except Exception as e:
-            print(f"Error calculating Catalyst Context: {e}")
+            logger.error(f"[compute_catalyst_context_dict] Error calculating Catalyst Context: {e}")
             return {
                 "day_type": "Error",
                 "gap_pct": 0.0,
@@ -803,53 +847,58 @@ class CalculationEngine:
             "premium_trend": "Unknown",
             "interpretation": "Unknown"
         }
-        
+
         try:
+            # Initialize live_basis outside the conditional block for later use
+            live_basis = None
+
             # 1. Calculate 15m Momentum (using 5-min candles, i.e., 3 candles ago)
             if not spot_5m_df.empty and not fut_5m_df.empty and len(spot_5m_df) >= 4 and len(fut_5m_df) >= 4:
                 live_spot = float(spot_5m_df.iloc[-1]['close'])
                 live_fut = float(fut_5m_df.iloc[-1]['close'])
-                
+
                 spot_15m = float(spot_5m_df.iloc[-4]['close'])
                 fut_15m = float(fut_5m_df.iloc[-4]['close'])
-                
+
                 live_basis = live_fut - live_spot
                 basis_15m = fut_15m - spot_15m
                 basis_15m_change = live_basis - basis_15m
-                
+
                 result["current_premium"] = round(live_basis, 2)
                 result["15m_basis_change"] = round(basis_15m_change, 2)
-                
+
                 if basis_15m_change >= 10.0:
                     result["interpretation"] = "Aggressive Institutional Buying (Premium Expansion)"
                 elif basis_15m_change <= -10.0:
                     result["interpretation"] = "Aggressive Institutional Selling (Premium Contraction)"
                 else:
                     result["interpretation"] = "Stable / Noise"
-                    
+
             # 2. Calculate 20-day SMA Trend (Monthly Baseline)
             if not spot_daily_df.empty and not fut_daily_df.empty and len(spot_daily_df) >= 20 and len(fut_daily_df) >= 20:
                 # Align dates if needed, but assuming roughly synced arrays for last 20 trading days
                 spot_closes = spot_daily_df.tail(20)['close'].values
                 fut_closes = fut_daily_df.tail(20)['close'].values
-                
+
                 basis_history = [f - s for f, s in zip(fut_closes, spot_closes)]
                 basis_20d_sma = sum(basis_history) / len(basis_history)
-                
+
                 result["20d_sma_baseline"] = round(float(basis_20d_sma), 2)
-                
+
                 # Compare live basis to 20d SMA (Monthly context)
-                if live_basis > basis_20d_sma + 10:
-                    result["premium_trend"] = "Expanding"
-                elif live_basis < basis_20d_sma - 10:
-                    result["premium_trend"] = "Shrinking"
-                else:
-                    result["premium_trend"] = "Mean Reverting"
+                # Only compare if live_basis was calculated (first block was executed)
+                if live_basis is not None:
+                    if live_basis > basis_20d_sma + 10:
+                        result["premium_trend"] = "Expanding"
+                    elif live_basis < basis_20d_sma - 10:
+                        result["premium_trend"] = "Shrinking"
+                    else:
+                        result["premium_trend"] = "Mean Reverting"
 
             return result
 
         except Exception as e:
-            print(f"Error calculating Cost of Carry: {e}")
+            logger.error(f"[compute_cost_of_carry_dict] Error calculating Cost of Carry: {e}")
             return result
             
     def compute_true_vwap_dict(self, fut_5m_df: pd.DataFrame):
@@ -870,8 +919,9 @@ class CalculationEngine:
                 
             # Filter DataFrame to strictly today's intraday bars
             latest_ts = pd.to_datetime(fut_5m_df['timestamp'].iloc[-1])
-            today_date_str = latest_ts.strftime('%Y-%m-%d')
-            today_df = fut_5m_df[fut_5m_df['timestamp'].str.startswith(today_date_str)].copy()
+            today_date = latest_ts.date()
+            # Use proper datetime comparison instead of string startswith
+            today_df = fut_5m_df[pd.to_datetime(fut_5m_df['timestamp']).dt.date == today_date].copy()
             
             if len(today_df) == 0:
                 return result
@@ -904,7 +954,7 @@ class CalculationEngine:
             return result
             
         except Exception as e:
-            print(f"Error calculating True VWAP: {e}")
+            logger.error(f"[compute_true_vwap_dict] Error calculating True VWAP: {e}")
             return result
             
     def compute_max_pain(self, option_chain_data: list, latest_spot_price: float):
@@ -994,7 +1044,7 @@ class CalculationEngine:
             return result
                 
         except Exception as e:
-            print(f"Error calculating Max Pain: {e}")
+            logger.error(f"[compute_max_pain] Error calculating Max Pain: {e}")
             return result
             
     def compute_options_pcr(self, option_chain_data: list):
@@ -1037,7 +1087,7 @@ class CalculationEngine:
             return result
             
         except Exception as e:
-            print(f"Error calculating PCR: {e}")
+            logger.error(f"[compute_options_pcr] Error calculating PCR: {e}")
             return result
             
     def compute_gamma_walls(self, option_chain_data: list, latest_spot_price: float):
@@ -1133,7 +1183,7 @@ class CalculationEngine:
             return result
                 
         except Exception as e:
-            print(f"Error extracting Gamma Walls: {e}")
+            logger.error(f"[compute_gamma_walls] Error extracting Gamma Walls: {e}")
             return result
 
     def compute_gamma_flip_point(self, option_chain_data: list, latest_spot_price: float):
@@ -1161,18 +1211,18 @@ class CalculationEngine:
                 # Fetch Call Gamma/OI
                 if call_info:
                     market_data = call_info.get('market_data', {})
-                    gamma = float(call_info.get('option_greeks', {}).get('gamma', 0))
-                    oi = float(market_data.get('oi', 0))
+                    gamma = float(call_info.get('option_greeks', {}).get('gamma', 0) or 0)
+                    oi = float(market_data.get('oi', 0) or 0)
                     # Call GEX is positive
-                    call_gex_value = gamma * oi * 25 # Nifty Lot Size
+                    call_gex_value = gamma * oi * LOT_SIZE
 
                 # Fetch Put Gamma/OI
                 if put_info:
                     market_data = put_info.get('market_data', {})
-                    gamma = float(put_info.get('option_greeks', {}).get('gamma', 0))
-                    oi = float(market_data.get('oi', 0))
+                    gamma = float(put_info.get('option_greeks', {}).get('gamma', 0) or 0)
+                    oi = float(market_data.get('oi', 0) or 0)
                     # Put GEX is negative
-                    put_gex_value = gamma * oi * 25 # Nifty Lot Size * -1
+                    put_gex_value = gamma * oi * LOT_SIZE
                     put_gex_value = -put_gex_value
                     
                 total_strike_gex = call_gex_value + put_gex_value
@@ -1199,7 +1249,7 @@ class CalculationEngine:
             return round(gamma_flip_strike, 2)
             
         except Exception as e:
-            print(f"Error calculating Gamma Flip: {e}")
+            logger.error(f"[compute_gamma_flip_point] Error calculating Gamma Flip: {e}")
             return 0.0
 
     def compute_technical_indicators_dict(self, indicators_dict: dict):
@@ -1431,67 +1481,78 @@ class CalculationEngine:
         metadata_map: dict mapping instrument_key -> respective contract metadata dict
         """
         results = []
-        for key, quote in market_quotes.items():
-            meta = metadata_map.get(key, {})
-            symbol = meta.get('trading_symbol', meta.get('symbol', key))
-            strike = meta.get('strike_price', 0.0)
-            option_type = meta.get('instrument_type', 'Unknown')
-            
-            # Format expiry directly from timestamp or string safely
-            expiry_str = meta.get('expiry')
-            formatted_expiry = ""
-            if expiry_str:
-                try:
-                    if isinstance(expiry_str, str) and "-" in expiry_str:
-                        dt = pd.to_datetime(expiry_str).date()
-                        formatted_expiry = dt.strftime('%Y-%m-%d')
-                    else:
-                        dt = pd.to_datetime(int(expiry_str), unit='ms').date()
-                        formatted_expiry = dt.strftime('%Y-%m-%d')
-                except Exception:
-                    formatted_expiry = str(expiry_str)
+        try:
+            if not isinstance(market_quotes, dict):
+                logger.error(f"[compute_term_structure_liquidity] Invalid market_quotes type: {type(market_quotes)}")
+                return results
+            if not isinstance(metadata_map, dict):
+                logger.error(f"[compute_term_structure_liquidity] Invalid metadata_map type: {type(metadata_map)}")
+                return results
 
-            # Extract raw metrics from market quote schema
-            total_buy = quote.get('total_buy_quantity')
-            if total_buy is None: total_buy = 0.0
-            total_sell = quote.get('total_sell_quantity')
-            if total_sell is None: total_sell = 0.0
-            
-            last_price = quote.get('last_price', 0.0)
-            timestamp = quote.get('timestamp', "")
-            
-            # Formulate buy pressure explicitly based on order book aggregates
-            buy_pressure_pct = 0.0
-            if total_buy + total_sell > 0:
-                buy_pressure_pct = round((total_buy / (total_buy + total_sell)) * 100, 2)
-                
-            # Compute deep liquidity proxy ('large trades') from active Level 2 depth
-            depth = quote.get('depth', {})
-            large_trades_count = 0
-            if depth:
-                buy_depth = depth.get('buy', [])
-                sell_depth = depth.get('sell', [])
-                for item in buy_depth + sell_depth:
-                    if item.get('quantity', 0) > 1000:
-                        large_trades_count += 1
-                        
-            results.append({
-                "instrument_metadata": {
-                    "symbol": symbol,
-                    "strike_price": float(strike),
-                    "option_type": option_type,
-                    "expiry": formatted_expiry
-                },
-                "liquidity_context": {
-                    "large_trades_count": large_trades_count,
-                    "buy_pressure_pct": buy_pressure_pct,
-                    "total_buy_qty": total_buy,
-                    "total_sell_qty": total_sell,
-                    "last_traded_price": last_price,
-                    "timestamp": timestamp
-                }
-            })
-            
+            for key, quote in market_quotes.items():
+                meta = metadata_map.get(key, {})
+                symbol = meta.get('trading_symbol', meta.get('symbol', key))
+                strike = meta.get('strike_price', 0.0)
+                option_type = meta.get('instrument_type', 'Unknown')
+
+                # Format expiry directly from timestamp or string safely
+                expiry_str = meta.get('expiry')
+                formatted_expiry = ""
+                if expiry_str:
+                    try:
+                        if isinstance(expiry_str, str) and "-" in expiry_str:
+                            dt = pd.to_datetime(expiry_str).date()
+                            formatted_expiry = dt.strftime('%Y-%m-%d')
+                        else:
+                            dt = pd.to_datetime(int(expiry_str), unit='ms').date()
+                            formatted_expiry = dt.strftime('%Y-%m-%d')
+                    except Exception:
+                        formatted_expiry = str(expiry_str)
+
+                # Extract raw metrics from market quote schema
+                total_buy = quote.get('total_buy_quantity')
+                if total_buy is None: total_buy = 0.0
+                total_sell = quote.get('total_sell_quantity')
+                if total_sell is None: total_sell = 0.0
+
+                last_price = quote.get('last_price', 0.0)
+                timestamp = quote.get('timestamp', "")
+
+                # Formulate buy pressure explicitly based on order book aggregates
+                buy_pressure_pct = 0.0
+                if total_buy + total_sell > 0:
+                    buy_pressure_pct = round((total_buy / (total_buy + total_sell)) * 100, 2)
+
+                # Compute deep liquidity proxy ('large trades') from active Level 2 depth
+                depth = quote.get('depth', {})
+                large_trades_count = 0
+                if depth:
+                    buy_depth = depth.get('buy', [])
+                    sell_depth = depth.get('sell', [])
+                    for item in buy_depth + sell_depth:
+                        if item.get('quantity', 0) > 1000:
+                            large_trades_count += 1
+
+                results.append({
+                    "instrument_metadata": {
+                        "symbol": symbol,
+                        "strike_price": float(strike),
+                        "option_type": option_type,
+                        "expiry": formatted_expiry
+                    },
+                    "liquidity_context": {
+                        "large_trades_count": large_trades_count,
+                        "buy_pressure_pct": buy_pressure_pct,
+                        "total_buy_qty": total_buy,
+                        "total_sell_qty": total_sell,
+                        "last_traded_price": last_price,
+                        "timestamp": timestamp
+                    }
+                })
+
+        except Exception as e:
+            logger.error(f"[compute_term_structure_liquidity] Error calculating term structure liquidity: {e}")
+
         return results
 
     def generate_5min_sync_payload(self, current_timestamp, synthetic_ohlc, net_gex, indicators_dict):
