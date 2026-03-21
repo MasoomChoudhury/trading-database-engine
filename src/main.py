@@ -18,19 +18,18 @@ from database.supabase_client import RemoteDBWatcher
 # Responds with 200 if the scheduler loop is running.
 
 _health_server_port = int(os.getenv("HEALTH_PORT", "8001"))
-_engine_ready = False
 
 class HealthHandler(BaseHTTPRequestHandler):
     def log_message(self, *args): ...  # Suppress request noise
 
     def do_GET(self):
-        if self.path == "/health" and _engine_ready:
+        if self.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
         else:
-            self.send_response(503)
+            self.send_response(404)
             self.end_headers()
 
 def _start_health_server():
@@ -754,11 +753,6 @@ def _main():
     logging.info("INIT: Starting health server on port %s...", _health_server_port)
     _start_health_server()
 
-    # Mark engine ready immediately — healthcheck verifies the process is alive,
-    # not whether the first sync has completed
-    _engine_ready = True
-    logging.info("INIT: _engine_ready = True (health check will return 200)")
-
     logging.info("INIT: Validating Upstox credentials...")
     if not _validate_upstox_token():
         logging.warning("INIT: Upstox token invalid or refresh failed — sync will retry on schedule")
@@ -777,9 +771,16 @@ def _main():
 
     logging.info("INIT: Engine running. Waiting for schedule...")
 
+    logging.info("INIT: Engine running. PID=%s", os.getpid())
+
+    tick = 0
     while not _shutdown_requested:
         schedule.run_pending()
         time.sleep(1)
+        tick += 1
+        if tick >= 60:         # Log heartbeat every 60 seconds
+            logging.info("ENGINE ALIVE: scheduler loop active, next sync in %s", schedule.idle_seconds)
+            tick = 0
 
     logging.info("Shutdown complete.")
 
