@@ -1,7 +1,10 @@
 """Upstox data fetcher adapter implementing DataFetcher Protocol."""
 
 from __future__ import annotations
+import logging
 from typing import List, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 from .base import (
     DataFetcher,
@@ -34,9 +37,13 @@ class UpstoxDataFetcher:
         from_date: str
     ) -> List[Candle]:
         """Fetch historical OHLCV data."""
-        raw_candles = self._client.get_historical_candles(
-            instrument_key, interval, to_date, from_date
-        )
+        try:
+            raw_candles = self._client.get_historical_candles(
+                instrument_key, interval, to_date, from_date
+            )
+        except Exception as e:
+            logger.error(f"Error fetching historical candles: {e}")
+            return []
         return [self._normalize_candle(c) for c in raw_candles]
 
     def get_intraday_candles(
@@ -45,7 +52,11 @@ class UpstoxDataFetcher:
         interval: str = "1"
     ) -> List[Candle]:
         """Fetch intraday OHLCV data."""
-        raw_candles = self._client.get_intraday_candles(instrument_key, interval)
+        try:
+            raw_candles = self._client.get_intraday_candles(instrument_key, interval)
+        except Exception as e:
+            logger.error(f"Error fetching intraday candles: {e}")
+            return []
         return [self._normalize_candle(c) for c in raw_candles]
 
     def get_option_chain(
@@ -54,12 +65,20 @@ class UpstoxDataFetcher:
         expiry_date: str
     ) -> List[OptionStrike]:
         """Fetch option chain for a given underlying and expiry."""
-        raw_chain = self._client.get_option_chain(instrument_key, expiry_date)
+        try:
+            raw_chain = self._client.get_option_chain(instrument_key, expiry_date)
+        except Exception as e:
+            logger.error(f"Error fetching option chain: {e}")
+            return []
         return [self._normalize_option_strike(o) for o in raw_chain]
 
     def get_expiries(self, instrument_key: str) -> List[str]:
         """Get all available expiry dates for an instrument."""
-        return self._client.get_expiries(instrument_key) or []
+        try:
+            return self._client.get_expiries(instrument_key) or []
+        except Exception as e:
+            logger.error(f"Error fetching expiries: {e}")
+            return []
 
     def get_future_contracts(
         self,
@@ -67,14 +86,22 @@ class UpstoxDataFetcher:
         expiry_date: str
     ) -> List[Dict[str, Any]]:
         """Get future contracts for an instrument and expiry."""
-        return self._client.get_future_contracts(instrument_key, expiry_date) or []
+        try:
+            return self._client.get_future_contracts(instrument_key, expiry_date) or []
+        except Exception as e:
+            logger.error(f"Error fetching future contracts: {e}")
+            return []
 
     def get_market_quote(
         self,
         instrument_keys: List[str]
     ) -> Dict[str, MarketQuote]:
         """Fetch market quotes for multiple instruments."""
-        raw_quotes = self._client.get_market_quote(instrument_keys) or {}
+        try:
+            raw_quotes = self._client.get_market_quote(instrument_keys) or {}
+        except Exception as e:
+            logger.error(f"Error fetching market quote: {e}")
+            return {}
         return {
             key: self._normalize_market_quote(key, data)
             for key, data in raw_quotes.items()
@@ -85,7 +112,11 @@ class UpstoxDataFetcher:
         instrument_keys: List[str]
     ) -> Dict[str, OptionGreeks]:
         """Fetch option Greeks for multiple instruments."""
-        raw_greeks = self._client.get_option_greeks(instrument_keys) or {}
+        try:
+            raw_greeks = self._client.get_option_greeks(instrument_keys) or {}
+        except Exception as e:
+            logger.error(f"Error fetching option greeks: {e}")
+            return {}
         return {
             key: self._normalize_option_greeks(key, data)
             for key, data in raw_greeks.items()
@@ -93,11 +124,17 @@ class UpstoxDataFetcher:
 
     def test_connection(self) -> bool:
         """Test API connection and authentication."""
-        return self._client.test_connection()
+        try:
+            return self._client.test_connection()
+        except Exception as e:
+            logger.error(f"Error testing connection: {e}")
+            return False
 
     @staticmethod
     def _normalize_candle(raw: List) -> Candle:
         """Convert raw Upstox candle to standard Candle type."""
+        if len(raw) < 6:
+            raise ValueError(f"Candle data must have at least 6 fields, got {len(raw)}")
         return Candle(
             timestamp=str(raw[0]),
             open=float(raw[1]),
