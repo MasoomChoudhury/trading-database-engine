@@ -5,8 +5,9 @@ import requests
 import subprocess
 import jwt
 import time
+from pathlib import Path
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from routers.auth import get_current_user
 from database.supabase_client import RemoteDBWatcher
@@ -106,22 +107,27 @@ async def update_code(request: Request, user: str = Depends(get_current_user)):
 
 @router.get("/config", response_class=HTMLResponse)
 async def get_config(request: Request, user: str = Depends(get_current_user)):
+    """Returns raw .env file content as plain text."""
     if not user:
         return HTMLResponse("Unauthorized", status_code=401)
-    
     try:
-        content = ""
-        if os.path.exists(".env"):
-            with open(".env", "r") as f:
-                content = f.read()
-        return HTMLResponse(content)
+        env_path = Path(__file__).parent.parent.parent / ".env"
+        content = env_path.read_text()
+        return PlainTextResponse(content)
     except Exception as e:
-        return HTMLResponse(f"Error reading .env: {str(e)}")
+        return HTMLResponse(f"Error reading config: {e}", status_code=500)
 
 @router.post("/config", response_class=HTMLResponse)
 async def save_config(request: Request, user: str = Depends(get_current_user)):
     if not user:
         return HTMLResponse("Unauthorized", status_code=401)
+
+    # CSRF check — reject requests from other origins
+    referer = request.headers.get("referer", "")
+    origin = request.headers.get("origin", "")
+    host = request.headers.get("host", "")
+    if origin and origin not in ["http://" + host, "https://" + host]:
+        return HTMLResponse("<span style='color:#ef4444'>Invalid origin</span>", status_code=403)
 
     try:
         form_data = await request.form()

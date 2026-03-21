@@ -34,23 +34,6 @@
   color: var(--muted);
   margin-bottom: 16px;
 }
-.maint-btn {
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  border: none;
-  transition: all 0.15s;
-}
-.maint-btn-primary { background: var(--accent); color: #fff; }
-.maint-btn-primary:hover { background: var(--accent-h); }
-.maint-btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--muted); }
-.maint-btn-secondary:hover { border-color: var(--hover); color: var(--text); }
-.maint-btn-danger { background: var(--danger); color: #fff; }
-.maint-btn-danger:hover { opacity: 0.9; }
-
 /* Status badge */
 .token-badge {
   display: inline-flex;
@@ -141,7 +124,7 @@
         </div>
       </div>
       <div class="maint-section-sub">Your daily access token expires — refresh without terminal access.</div>
-      <a href="/auth/login-upstox" class="maint-btn maint-btn-primary">Refresh Token</a>
+      <a href="/auth/login-upstox" class="btn btn-primary">Refresh Token</a>
     </div>
 
     {# Section 2: Data Maintenance #}
@@ -155,7 +138,7 @@
         <div class="maint-row">
           <label for="prune-end-date" style="font-size:12px;color:var(--muted)">Drop chunks older than</label>
           <input type="date" id="prune-end-date" class="maint-input">
-          <button class="maint-btn maint-btn-secondary" onclick="analyzeChunks()">Analyze</button>
+          <button class="btn btn-secondary" onclick="analyzeChunks()">Analyze</button>
         </div>
         <div class="maint-result" id="analyze-result">Select a date and click Analyze.</div>
       </div>
@@ -163,12 +146,12 @@
       {# Sub-section B: Execute Pruning #}
       <div class="maint-sub-section">
         <div class="maint-sub-label">Execute drop_chunks()</div>
-        <button class="maint-btn maint-btn-danger" onclick="showPruneConfirm()">Drop Chunks</button>
+        <button class="btn btn-danger" onclick="showPruneConfirm()">Drop Chunks</button>
         <div class="maint-confirm" id="prune-confirm">
           <div class="maint-confirm-text">This will permanently delete chunks older than the selected date. This cannot be undone.</div>
           <div class="maint-confirm-actions">
-            <button class="maint-btn maint-btn-danger" onclick="executePrune()">Drop Now</button>
-            <button class="maint-btn maint-btn-secondary" onclick="hidePruneConfirm()">Cancel</button>
+            <button class="btn btn-danger" onclick="executePrune()">Drop Now</button>
+            <button class="btn btn-secondary" onclick="hidePruneConfirm()">Cancel</button>
           </div>
         </div>
         <div class="maint-result" id="prune-result"></div>
@@ -179,7 +162,7 @@
     <div class="maint-section">
       <div class="maint-section-title">Data Integrity Audit</div>
       <div class="maint-section-sub">Checks for gaps in 5-min candle series (last 24h).</div>
-      <button class="maint-btn maint-btn-secondary" onclick="runAudit()">Run Audit</button>
+      <button class="btn btn-secondary" onclick="runAudit()">Run Audit</button>
       <div class="maint-result" id="audit-result">Click Run Audit to check for data gaps.</div>
     </div>
 
@@ -193,6 +176,7 @@
 async function loadTokenStatus() {
   try {
     const resp = await fetch('/admin/alerts');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const alerts = await resp.json();
     const tokenAlert = alerts.find(a =>
       a.message.includes('token') || a.message.includes('Token')
@@ -213,7 +197,7 @@ async function loadTokenStatus() {
       text.textContent = 'Unknown';
     }
   } catch (e) {
-    // Silently fail
+    console.warn('Failed to load token status', e);
   }
 }
 
@@ -232,6 +216,7 @@ async function analyzeChunks() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'end_date=' + encodeURIComponent(endDate),
     });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const html = await resp.text();
     result.innerHTML = html;
   } catch (e) {
@@ -259,6 +244,7 @@ async function executePrune() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'end_date=' + encodeURIComponent(endDate),
     });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const html = await resp.text();
     result.innerHTML = html;
   } catch (e) {
@@ -272,6 +258,7 @@ async function runAudit() {
   result.innerHTML = '<span style="color:var(--dim)">Running audit...</span>';
   try {
     const resp = await fetch('/data/audit');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const html = await resp.text();
     result.innerHTML = html;
   } catch (e) {
