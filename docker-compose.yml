@@ -27,6 +27,7 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"        # Real-time log output
       PYTHONDONTWRITEBYTECODE: "1"
+      NUMBA_CACHE_DIR: "/tmp/numba_cache"   # numba writes JIT cache here (writable vs read-only site-packages)
     # Graceful shutdown: trap SIGTERM → Python exit
     stop_grace_period: 30s
     healthcheck:
