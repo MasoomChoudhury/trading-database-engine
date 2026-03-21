@@ -184,17 +184,17 @@
 
     {% block show_nav %}{% endblock %}
 
-    {% if show_nav is not false %}
+    {% if show_nav is not defined or show_nav is not false %}
     <nav class="nav-bar">
         <a href="/" class="nav-logo">
             <div class="nav-logo-mark"></div>
             <div class="nav-logo-text">Data Engine <span>v2</span></div>
         </a>
-        <div class="nav-tabs" id="nav-tabs">
-            <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
-            <button class="nav-tab" data-tab="config">Config</button>
-            <button class="nav-tab" data-tab="maintenance">Maintenance</button>
-            <button class="nav-tab" data-tab="logs">Logs</button>
+        <div class="nav-tabs" id="nav-tabs" role="tablist" aria-label="Main navigation">
+            <button class="nav-tab active" role="tab" aria-selected="true" aria-controls="tab-dashboard" data-tab="dashboard">Dashboard</button>
+            <button class="nav-tab" role="tab" aria-selected="false" aria-controls="tab-config" data-tab="config">Config</button>
+            <button class="nav-tab" role="tab" aria-selected="false" aria-controls="tab-maintenance" data-tab="maintenance">Maintenance</button>
+            <button class="nav-tab" role="tab" aria-selected="false" aria-controls="tab-logs" data-tab="logs">Logs</button>
         </div>
         <div class="nav-user">
             <span class="nav-user-name">{{ request.session.user }}</span>
@@ -231,6 +231,23 @@
     const hamburger = document.getElementById('nav-hamburger');
     hamburger?.addEventListener('click', () => {
         document.getElementById('nav-tabs')?.classList.toggle('open');
+    });
+
+    // Keyboard navigation for tabs
+    document.querySelectorAll('.nav-tab').forEach((btn, i, btns) => {
+      btn.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight') btns[(i+1) % btns.length].focus();
+        if (e.key === 'ArrowLeft') btns[(i-1+btns.length) % btns.length].focus();
+      });
+    });
+
+    // Close mobile menu on outside click
+    document.addEventListener('click', (e) => {
+      const tabs = document.getElementById('nav-tabs');
+      const hamburger = document.getElementById('nav-hamburger');
+      if (!tabs?.contains(e.target) && !hamburger?.contains(e.target)) {
+        tabs?.classList.remove('open');
+      }
     });
     </script>
 
