@@ -236,8 +236,26 @@
     // Keyboard navigation for tabs
     document.querySelectorAll('.nav-tab').forEach((btn, i, btns) => {
       btn.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowRight') btns[(i+1) % btns.length].focus();
-        if (e.key === 'ArrowLeft') btns[(i-1+btns.length) % btns.length].focus();
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const targetIndex = e.key === 'ArrowRight' ? (i+1) % btns.length : (i-1+btns.length) % btns.length;
+          const target = btns[targetIndex];
+
+          // Update visual and ARIA state
+          btns.forEach(b => {
+            b.setAttribute('aria-selected', 'false');
+            b.classList.remove('active');
+          });
+          target.setAttribute('aria-selected', 'true');
+          target.classList.add('active');
+
+          // Switch tab content
+          const tabName = target.dataset.tab;
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          document.getElementById('tab-' + tabName)?.classList.add('active');
+
+          target.focus();
+        }
       });
     });
 
