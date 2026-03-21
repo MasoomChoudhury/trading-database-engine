@@ -155,11 +155,9 @@
   <div class="status-strip">
     <div class="status-strip-left">
       <div class="status-item">
+        <span class="status-label">NIFTY50:</span>
         <span class="status-price" id="nifty-price">—</span>
         <span class="status-change-up" id="nifty-change"></span>
-      </div>
-      <div class="status-item">
-        <span class="status-label">NIFTY50</span>
       </div>
       <div class="status-item">
         <span class="status-dot success" id="db-dot"></span>
@@ -257,6 +255,8 @@ async function initChart() {
     if (data.candles && data.candles.length > 0) {
       candleSeries.setData(data.candles);
       lastLoadedTimestamp = data.candles[data.candles.length - 1].time;
+      // Update NIFTY price in status strip
+      updateNiftyPrice(data.candles);
     }
   } catch (e) {
     console.error('Failed to load chart data', e);
@@ -345,10 +345,30 @@ function renderAlertFeed(alerts) {
   `).join('');
 }
 
+function updateNiftyPrice(candles) {
+  if (!candles || candles.length < 2) return;
+  const last = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+  const priceEl = document.getElementById('nifty-price');
+  const changeEl = document.getElementById('nifty-change');
+  if (!priceEl || !changeEl) return;
+
+  const close = last.close;
+  const open = prev.open || close;
+  const change = close - open;
+  const changePct = ((change / open) * 100).toFixed(2);
+  const isUp = change >= 0;
+
+  priceEl.textContent = close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  changeEl.textContent = (isUp ? '▲' : '▼') + ' ' + (isUp ? '+' : '') + changePct + '%';
+  changeEl.className = isUp ? 'status-change-up' : 'status-change-dn';
+}
+
 // ---------- Actions ----------
 function doAction(type) {
   const btnId = type === 'restart' ? 'btn-restart' : 'btn-pull';
   const btn = document.getElementById(btnId);
+  if (!btn) return;  // Guard against missing button
   const endpoint = type === 'restart' ? '/admin/restart-engine' : '/admin/pull-latest';
   const originalText = btn.textContent;
 
@@ -389,13 +409,16 @@ function refreshToken() {
 }
 
 // ---------- Init ----------
-document.addEventListener('DOMContentLoaded', () => {
-  initChart();
-  pollStatus();
-  // Poll alerts every 60s
-  setInterval(pollStatus, 60_000);
-  // Poll chart updates every 30s
-  setInterval(pollLiveCandles, 30_000);
-});
+let statusInterval, candleInterval;
+
+function startPolling() {
+  clearInterval(statusInterval);
+  clearInterval(candleInterval);
+  statusInterval = setInterval(pollStatus, 60_000);
+  candleInterval = setInterval(pollLiveCandles, 30_000);
+}
+
+document.removeEventListener('DOMContentLoaded', startPolling);
+document.addEventListener('DOMContentLoaded', startPolling);
 </script>
 {% endblock %}
