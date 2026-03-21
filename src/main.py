@@ -745,6 +745,45 @@ def run_5min_sync_job():
     except Exception as e:
         print(f"Error during job execution: {e}")
 
+def _main():
+    """Main engine loop. Wrapped in try/except at entry point for crash logging."""
+    logging.info("INIT: Setting up graceful shutdown handlers...")
+    signal.signal(signal.SIGTERM, _request_shutdown)
+    signal.signal(signal.SIGINT, _request_shutdown)
+
+    logging.info("INIT: Starting health server on port %s...", _health_server_port)
+    _start_health_server()
+
+    # Mark engine ready immediately — healthcheck verifies the process is alive,
+    # not whether the first sync has completed
+    _engine_ready = True
+    logging.info("INIT: _engine_ready = True (health check will return 200)")
+
+    logging.info("INIT: Validating Upstox credentials...")
+    if not _validate_upstox_token():
+        logging.warning("INIT: Upstox token invalid or refresh failed — sync will retry on schedule")
+    else:
+        logging.info("INIT: Upstox credentials OK")
+
+    logging.info("INIT: Setting up 5-minute sync schedule...")
+    schedule.every(5).minutes.at(":05").do(run_5min_sync_job)
+
+    logging.info("INIT: Running initial sync...")
+    try:
+        run_5min_sync_job()
+        logging.info("INIT: Initial sync completed")
+    except Exception as e:
+        logging.error("INIT: Initial sync failed (engine will retry on schedule): %s", e)
+
+    logging.info("INIT: Engine running. Waiting for schedule...")
+
+    while not _shutdown_requested:
+        schedule.run_pending()
+        time.sleep(1)
+
+    logging.info("Shutdown complete.")
+
+
 if __name__ == "__main__":
     # ── Logging ───────────────────────────────────────────────────────────────
     logging.basicConfig(
@@ -753,37 +792,14 @@ if __name__ == "__main__":
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # ── Graceful shutdown ───────────────────────────────────────────────────
-    signal.signal(signal.SIGTERM, _request_shutdown)
-    signal.signal(signal.SIGINT, _request_shutdown)
+    logging.info("=" * 60)
+    logging.info("DATABASE ENGINE v2 — STARTING")
+    logging.info("HEALTH_PORT=%s", os.getenv("HEALTH_PORT", "8001"))
+    logging.info("PYTHONPATH=%s", os.getenv("PYTHONPATH", "/app"))
+    logging.info("=" * 60)
 
-    # ── Health server ─────────────────────────────────────────────────────
-    _start_health_server()
-
-    # ── Token validation ────────────────────────────────────────────────────
-    print("Validating Upstox credentials...")
-    if not _validate_upstox_token():
-        print("WARNING: Upstox token is invalid or refresh failed. Engine starting anyway — sync will fail.")
-        print("         Fix: run 'python upstox_auth.py' to get a new token, then restart.")
-    else:
-        print("Upstox credentials OK.")
-
-    # ── Scheduler ──────────────────────────────────────────────────────────
-    schedule.every(5).minutes.at(":05").do(run_5min_sync_job)
-
-    print("Starting 5-minute sync loop...")
-    _engine_ready = True   # Mark healthy before first sync — container survives sync failures
     try:
-        run_5min_sync_job()   # Run immediately on startup
-    except Exception as e:
-        logging.error(f"Initial sync failed (engine will retry on schedule): {e}")
-
-    print("Sync engine running. Press Ctrl+C or send SIGTERM to stop gracefully.")
-
-    # ── Main loop ──────────────────────────────────────────────────────────
-    while not _shutdown_requested:
-        schedule.run_pending()
-        time.sleep(1)
-
-    print("Shutdown signal received — finishing current cycle...")
-    sys.exit(0)
+        _main()
+    except Exception:
+        logging.exception("FATAL: Unhandled exception in _main():")
+        sys.exit(1)
