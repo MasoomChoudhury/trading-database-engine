@@ -44,40 +44,100 @@ async def login_upstox():
 async def upstox_callback(request: Request, code: str = None):
     if not code:
         raise HTTPException(status_code=400, detail="Missing auth code")
-    
+
     # Credentials from .env
     API_KEY = os.getenv("UPSTOX_API_KEY")
     API_SECRET = os.getenv("UPSTOX_API_SECRET")
-    REDIRECT_URI = os.getenv("UPSTOX_REDIRECT_URI", "http://127.0.0.1:5000/")
+    REDIRECT_URI = os.getenv("UPSTOX_REDIRECT_URI", "https://database.masoomchoudhury.com/auth/upstox-callback")
 
     # Swap Code for Token
-    url = "https://api.upstox.com/v2/login/authorization/token"
-    data = {
-        'code': code,
-        'client_id': API_KEY,
-        'client_secret': API_SECRET,
-        'redirect_uri': REDIRECT_URI,
-        'grant_type': 'authorization_code'
+    token_url = "https://api.upstox.com/v2/login/authorization/token"
+    payload = {
+        "code": code,
+        "client_id": API_KEY,
+        "client_secret": API_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code",
     }
-    headers = {'accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'}
-    
+    headers = {
+        "accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
     try:
-        response = requests.post(url, data=data, headers=headers)
-        response.raise_for_status()
-        token = response.json().get('access_token')
-        
-        if token:
-            # Persistent Storage in Supabase
-            db = RemoteDBWatcher()
-            db.set_config("UPSTOX_ACCESS_TOKEN", token)
+        resp = requests.post(token_url, data=payload, headers=headers, timeout=15)
+        resp.raise_for_status()
+        token_data = resp.json()
+        token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+
+        if not token:
             return HTMLResponse(f"""
-                <div class='bg-green-900/30 border border-green-500/50 p-4 rounded-xl text-green-200 text-sm'>
-                    <p class='font-bold mb-1'>✅ Token Sync Successful</p>
-                    <p class='text-[10px] opacity-70'>Upstox token has been updated in Supabase cloud config.</p>
+                <div class='bg-red-900/30 border border-red-500/50 p-4 rounded-xl text-red-200 text-sm'>
+                    <p class='font-bold mb-1'>❌ No token in response</p>
+                    <p class='text-[10px] opacity-70 font-mono'>{token_data}</p>
                 </div>
             """)
-        else:
-            return HTMLResponse("<div class='text-red-400'>Error: No token in response</div>")
-            
+
+        # 1. Update Supabase cloud config
+        db = RemoteDBWatcher()
+        db.set_config("UPSTOX_ACCESS_TOKEN", token)
+        if refresh_token:
+            db.set_config("UPSTOX_REFRESH_TOKEN", refresh_token)
+
+        # 2. Update .env on disk (so Docker container picks it up on restart)
+        from dotenv import set_key
+        import pathlib
+
+        # Find .env relative to this file's location (works in both dev and Docker)
+        project_root = pathlib.Path(__file__).resolve().parents[2]
+        env_path = project_root / ".env"
+
+        set_key(str(env_path), "UPSTOX_ACCESS_TOKEN", token)
+        if refresh_token:
+            set_key(str(env_path), "UPSTOX_REFRESH_TOKEN", refresh_token)
+
+        # 3. Notify PM2 / Docker to restart engine so it picks up new token
+        restart_msg = ""
+        try:
+            import subprocess
+            subprocess.run(
+                ["docker", "compose", "-p", "db-engine", "restart", "engine"],
+                capture_output=True, timeout=30,
+            )
+            restart_msg = "Engine restarted with new token."
+        except Exception:
+            try:
+                subprocess.run(
+                    ["pm2", "restart", "db-engine"],
+                    capture_output=True, timeout=15,
+                )
+                restart_msg = "Engine restarted with new token."
+            except Exception:
+                restart_msg = "⚠ Could not auto-restart engine — please restart manually."
+
+        return HTMLResponse(f"""
+            <div class='bg-green-900/30 border border-green-500/50 p-4 rounded-xl text-green-200 text-sm'>
+                <p class='font-bold mb-1'>✅ Token Sync Complete</p>
+                <p class='text-[10px] opacity-70 mb-1'>
+                    Token: <span class='font-mono'>{token[:12]}...{token[-5:]}</span>
+                </p>
+                <p class='text-[10px] opacity-70'>Updated Supabase cloud config and .env</p>
+                <p class='text-[10px] opacity-70 mt-1'>{restart_msg}</p>
+            </div>
+        """)
+
+    except requests.HTTPError as e:
+        return HTMLResponse(f"""
+            <div class='bg-red-900/30 border border-red-500/50 p-4 rounded-xl text-red-200 text-sm'>
+                <p class='font-bold mb-1'>❌ HTTP Error {e.response.status_code}</p>
+                <p class='text-[10px] opacity-70 font-mono'>{e.response.text[:200]}</p>
+                <p class='text-[10px] opacity-70 mt-1'>Common cause: auth code expired (30s window) or redirect URI mismatch in Upstox Developer Portal.</p>
+            </div>
+        """)
     except Exception as e:
-        return HTMLResponse(f"<div class='text-red-400 font-mono text-xs'>Failed to exchange token: {str(e)}</div>")
+        return HTMLResponse(f"""
+            <div class='text-red-400 font-mono text-xs p-4'>
+                Failed to exchange token: {str(e)}
+            </div>
+        """)

@@ -274,6 +274,191 @@ class RemoteDBWatcher:
             print(f"[RemoteDBWatcher] set_config error: {e}")
             return None
 
+    # ─── Data Integrity Audit ────────────────────────────────────────────
+
+    def audit_candle_gaps(self, hours_back: int = 24) -> dict:
+        """
+        Detects gaps in 5-minute candle time-series data using LAG() window function.
+        A gap exists when the time delta between consecutive rows exceeds 6 minutes.
+        Returns dict with gap count and list of gap details.
+        """
+        conn = self._get_raw_conn()
+        if conn is None:
+            # Fall back to PostgREST — less precise but works
+            return self._audit_via_postgrest(hours_back)
+
+        try:
+            sql = f"""
+                SELECT
+                    ts,
+                    ts - LAG(ts) OVER (ORDER BY ts) AS gap
+                FROM market_data
+                WHERE ts >= NOW() - INTERVAL '{hours_back} hours'
+                ORDER BY ts
+            """
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                rows = cur.fetchall()
+                gaps = [
+                    {"previous_candle": r[0].isoformat() if r[0] else None,
+                     "next_candle": r[1].isoformat() if r[1] else None,
+                     "gap_seconds": (r[1] - r[0]).total_seconds() if r[0] and r[1] else None}
+                    for r in rows[1:] if r[1] and (r[1] - r[0]).total_seconds() > 360
+                ]
+                return {"method": "psycopg2", "total_rows": len(rows), "gaps": gaps}
+
+        except Exception as e:
+            print(f"[RemoteDBWatcher] audit_candle_gaps error: {e}")
+            conn.rollback()
+            return self._audit_via_postgrest(hours_back)
+
+    def _audit_via_postgrest(self, hours_back: int = 24) -> dict:
+        """Fallback gap audit via PostgREST RPC (calls a stored procedure)."""
+        try:
+            import datetime
+            from_str = (
+                datetime.datetime.now(datetime.timezone.utc)
+                - datetime.timedelta(hours=hours_back)
+            ).isoformat()
+
+            response = (
+                self.supabase.table("market_data")
+                .select("timestamp")
+                .gte("timestamp", from_str)
+                .order("timestamp", desc=False)
+                .execute()
+            )
+
+            rows = response.data or []
+            gaps = []
+            prev_ts = None
+            for row in rows:
+                ts_str = row.get("timestamp", "")
+                if prev_ts:
+                    from datetime import datetime as dt
+                    prev = dt.fromisoformat(prev_ts.replace("Z", "+00:00"))
+                    curr = dt.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    delta = (curr - prev).total_seconds()
+                    if delta > 360:  # > 6 minutes
+                        gaps.append({
+                            "previous_candle": prev_ts,
+                            "next_candle": ts_str,
+                            "gap_seconds": delta,
+                        })
+                prev_ts = ts_str
+
+            return {"method": "postgrest", "total_rows": len(rows), "gaps": gaps}
+        except Exception as e:
+            return {"method": "error", "total_rows": 0, "gaps": [], "error": str(e)}
+
+    # ─── TimescaleDB Pruning ────────────────────────────────────────────
+
+    def get_chunk_info(self, end_date: str) -> dict:
+        """
+        Returns information about chunks that would be dropped for a given end_date.
+        Works via direct psycopg2 connection to Supabase.
+        """
+        conn = self._get_raw_conn()
+        if conn is None:
+            return {"error": "Cannot connect to database. Check SUPABASE_DB_URL."}
+
+        try:
+            sql = """
+                SELECT
+                    chunk_table->>'chunk_name'       AS chunk_name,
+                    chunk_table->>'range_start_time' AS range_start,
+                    chunk_table->>'range_end_time'   AS range_end,
+                    pg_size_pretty(
+                        (chunk_table->>'total_bytes')::bigint
+                    )                                AS size
+                FROM timescaledb_information.chunks
+                WHERE hypertable_name = 'market_data'
+                  AND (chunk_table->>'range_end_time')::timestamptz < %s::timestamptz
+                ORDER BY range_start ASC
+            """
+            with conn.cursor() as cur:
+                cur.execute(sql, (end_date,))
+                rows = cur.fetchall()
+                return {
+                    "chunks": [
+                        {"name": r[0], "start": r[1], "end": r[2], "size": r[3]}
+                        for r in rows
+                    ],
+                    "total_chunks": len(rows),
+                }
+        except Exception as e:
+            # timescaledb_information might not be accessible — try raw pg tables
+            try:
+                sql = """
+                    SELECT
+                        inhrelid::regclass::text AS chunk_name,
+                        pg_size_pretty(pg_relation_size(inhrelid)) AS size
+                    FROM pg_inherits
+                    JOIN pg_class ON inhrelid = pg_class.oid
+                    WHERE inhparent = 'market_data'::regclass
+                      AND pg_relation_size(inhrelid) > 0
+                    ORDER BY inhrelid
+                """
+                with conn.cursor() as cur:
+                    cur.execute(sql)
+                    rows = cur.fetchall()
+                    return {
+                        "chunks": [{"name": r[0], "size": r[1]} for r in rows],
+                        "total_chunks": len(rows),
+                        "note": "Limited chunk info (TimescaleDB catalog not accessible)",
+                    }
+            except Exception as inner_e:
+                return {"error": f"Chunk query failed: {inner_e}"}
+        finally:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+    def drop_chunks(self, end_date: str) -> dict:
+        """
+        Drops TimescaleDB chunks older than end_date.
+        Requires direct psycopg2 connection to Supabase.
+        """
+        conn = self._get_raw_conn()
+        if conn is None:
+            return {"success": False, "error": "Cannot connect to database. Check SUPABASE_DB_URL."}
+
+        try:
+            # First verify the table is a hypertable
+            verify_sql = """
+                SELECT EXISTS(
+                    SELECT 1 FROM timescaledb_information.hypertables
+                    WHERE hypertable_name = 'market_data'
+                )
+            """
+            with conn.cursor() as cur:
+                cur.execute(verify_sql)
+                is_hypertable = cur.fetchone()[0]
+
+            if not is_hypertable:
+                # Not a hypertable — just delete old rows
+                delete_sql = "DELETE FROM market_data WHERE timestamp < %s::timestamptz"
+                with conn.cursor() as cur:
+                    cur.execute(delete_sql, (end_date,))
+                    deleted = cur.rowcount
+                    conn.commit()
+                return {"success": True, "method": "delete", "rows_deleted": deleted}
+
+            # It's a hypertable — use drop_chunks
+            sql = "SELECT drop_chunks('market_data', older_than => %s::timestamptz)"
+            with conn.cursor() as cur:
+                cur.execute(sql, (end_date,))
+                result = cur.fetchone()
+                conn.commit()
+            return {"success": True, "method": "drop_chunks", "result": result[0] if result else "done"}
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return {"success": False, "error": str(e)}
+
     def __del__(self):
         """Clean up psycopg2 connection on shutdown."""
         if self._raw_conn is not None:

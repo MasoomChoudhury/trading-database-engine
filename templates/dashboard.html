@@ -224,7 +224,6 @@
             },
         });
 
-        // Use the explicit method name for the current version
         let candleSeries;
         try {
             candleSeries = chart.addCandlestickSeries({
@@ -238,26 +237,68 @@
             console.error("Failed to add candlestick series:", e);
         }
 
-        // Fetch Initial Data
+        // Keep track of the last candle timestamp we've rendered
+        let lastLoadedTimestamp = null;
+
+        // ── Load full history once on startup ──────────────────────────────
         if (candleSeries) {
             fetch('/data/chart')
                 .then(res => res.json())
                 .then(data => {
                     if (data && Array.isArray(data) && data.length > 0) {
-                        // Ensure data is sorted by time
                         data.sort((a, b) => (a.time > b.time) ? 1 : -1);
                         candleSeries.setData(data);
+                        lastLoadedTimestamp = data[data.length - 1].time;
                     }
                 })
                 .catch(err => console.error("Failed to load chart data:", err));
         }
+
+        // ── Live updates every 30 seconds ────────────────────────────────
+        async function pollLiveCandles() {
+            if (!candleSeries) return;
+
+            try {
+                const resp = await fetch('/data/chart-update');
+                const candles = await resp.json();
+
+                if (!candles || candles.length === 0) return;
+
+                // Find candles newer than what we already have
+                const newCandles = lastLoadedTimestamp
+                    ? candles.filter(c => c.time > lastLoadedTimestamp)
+                    : candles;
+
+                if (newCandles.length === 0) return;
+
+                for (const candle of newCandles) {
+                    // LightweightCharts will update the last bar if time matches,
+                    // otherwise it appends a new bar
+                    try {
+                        candleSeries.update(candle);
+                    } catch (e) {
+                        // update throws when bar doesn't exist — fall back to update on last
+                        candleSeries.update(candle);
+                    }
+                }
+
+                // Update tracking timestamp to the latest candle
+                lastLoadedTimestamp = newCandles[newCandles.length - 1].time;
+
+            } catch (err) {
+                console.error("Live chart poll failed:", err);
+            }
+        }
+
+        // Poll every 30 seconds
+        setInterval(pollLiveCandles, 30_000);
 
         // Resize handler
         window.addEventListener('resize', () => {
             chart.resize(chartElement.clientWidth, chartElement.clientHeight);
         });
 
-        // Attachment to window for Alpine access
+        // Expose to window for Alpine/debug access
         window.mainChart = chart;
         window.candleSeries = candleSeries;
     });
