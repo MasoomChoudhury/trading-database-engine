@@ -1,9 +1,12 @@
 import os
+import json
 import psutil
 import requests
 import subprocess
+import jwt
+import time
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from routers.auth import get_current_user
 from database.supabase_client import RemoteDBWatcher
@@ -30,9 +33,6 @@ def check_db_health():
         return "Connected"
     except:
         return "Disconnected"
-
-import json
-import time
 
 def check_ws_health():
     """Checks the status of the WebSocket engine from its heartbeat file."""
@@ -122,18 +122,18 @@ async def get_config(request: Request, user: str = Depends(get_current_user)):
 async def save_config(request: Request, user: str = Depends(get_current_user)):
     if not user:
         return HTMLResponse("Unauthorized", status_code=401)
-    
+
     try:
         form_data = await request.form()
         content = form_data.get("config_content")
-        
+
         if content is None:
             return HTMLResponse("<span class='text-red-400 text-xs'>No content provided</span>")
-        
+
         # Save to .env
         with open(".env", "w") as f:
             f.write(content)
-            
+
         return HTMLResponse(f"""
             <div class="flex items-center space-x-2 text-green-400 animate-pulse">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,3 +144,101 @@ async def save_config(request: Request, user: str = Depends(get_current_user)):
         """)
     except Exception as e:
         return HTMLResponse(f"<span class='text-red-400 text-xs'>Error saving: {str(e)}</span>")
+
+
+@router.get("/logs", response_class=HTMLResponse)
+async def get_logs(request: Request, user: str = Depends(get_current_user)):
+    """Returns last 100 lines of engine logs as plain text."""
+    if not user:
+        return HTMLResponse("Unauthorized", status_code=401)
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "-p", "db-engine", "logs", "--tail", "100", "engine"],
+            capture_output=True, text=True, timeout=10,
+        )
+        return HTMLResponse(
+            f"<pre style='white-space:pre-wrap;word-break:break-all;color:#a1a1aa'>{result.stdout}</pre>"
+        )
+    except Exception as e:
+        return HTMLResponse(f"<pre style='color:#ef4444'>Error: {e}</pre>", status_code=500)
+
+
+@router.get("/alerts", response_class=JSONResponse)
+async def get_alerts(request: Request):
+    """Returns current alert list as JSON. Polled every 60s by the dashboard."""
+    import time as time_mod
+    alerts = []
+
+    # Check token expiry via JWT
+    try:
+        db = RemoteDBWatcher()
+        token = db.get_config("UPSTOX_ACCESS_TOKEN")
+        if token:
+            try:
+                import jwt
+                decoded = jwt.decode(token, options={"verify_signature": False})
+                exp = decoded.get("exp", 0)
+                remaining = exp - time_mod.time()
+                if remaining < 0:
+                    alerts.append({"level": "danger", "message": "Upstox token expired", "time": ""})
+                elif remaining < 4 * 3600:
+                    alerts.append({"level": "warning", "message": f"Token expires in {int(remaining/3600)}h", "time": ""})
+                else:
+                    alerts.append({"level": "success", "message": "Upstox token valid", "time": ""})
+            except Exception:
+                alerts.append({"level": "warning", "message": "Upstox token: could not decode", "time": ""})
+        else:
+            alerts.append({"level": "warning", "message": "Upstox token: not configured", "time": ""})
+    except Exception:
+        alerts.append({"level": "info", "message": "Token check unavailable", "time": ""})
+
+    # Check DB connectivity
+    try:
+        db = RemoteDBWatcher()
+        latest = db.get_latest()
+        if latest:
+            alerts.append({"level": "success", "message": f"DB connected — {latest.get('symbol', 'NIFTY50')}", "time": ""})
+        else:
+            alerts.append({"level": "danger", "message": "DB: no recent data", "time": ""})
+    except Exception:
+        alerts.append({"level": "danger", "message": "DB connection failed", "time": ""})
+
+    return alerts
+
+
+@router.post("/restart-engine", response_class=HTMLResponse)
+async def restart_engine(request: Request, user: str = Depends(get_current_user)):
+    if not user:
+        return HTMLResponse("<span style='color:#ef4444'>Unauthorized</span>", status_code=401)
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "-p", "db-engine", "restart", "engine"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            return HTMLResponse("<span style='color:#22c55e'>Engine restarted</span>")
+        else:
+            return HTMLResponse(f"<span style='color:#ef4444'>Failed: {result.stderr}</span>")
+    except Exception as e:
+        return HTMLResponse(f"<span style='color:#ef4444'>Error: {e}</span>")
+
+
+@router.post("/pull-latest", response_class=HTMLResponse)
+async def pull_latest(request: Request, user: str = Depends(get_current_user)):
+    if not user:
+        return HTMLResponse("<span style='color:#ef4444'>Unauthorized</span>", status_code=401)
+    try:
+        pull = subprocess.run(["git", "pull", "origin", "main"],
+                             capture_output=True, text=True, timeout=30)
+        if pull.returncode != 0:
+            return HTMLResponse(f"<span style='color:#ef4444'>Git pull failed: {pull.stderr}</span>")
+        build = subprocess.run(
+            ["docker", "compose", "-p", "db-engine", "up", "-d", "--build"],
+            capture_output=True, text=True, timeout=300,
+        )
+        if build.returncode == 0:
+            return HTMLResponse("<span style='color:#22c55e'>Pulled and deployed</span>")
+        else:
+            return HTMLResponse(f"<span style='color:#eab308'>Pull ok, build failed</span>")
+    except Exception as e:
+        return HTMLResponse(f"<span style='color:#ef4444'>Error: {e}</span>")

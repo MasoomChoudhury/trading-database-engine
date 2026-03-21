@@ -19,6 +19,7 @@ python-dotenv
 requests
 asyncio # If fetching concurrently
 websockets # If tick data is needed later
+PyJWT
 
 # Web Interface
 fastapi
