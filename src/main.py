@@ -772,9 +772,11 @@ if __name__ == "__main__":
     schedule.every(5).minutes.at(":05").do(run_5min_sync_job)
 
     print("Starting 5-minute sync loop...")
-    run_5min_sync_job()   # Run immediately on startup
-
-    _engine_ready = True   # Module-level variable — health endpoint now returns 200
+    _engine_ready = True   # Mark healthy before first sync — container survives sync failures
+    try:
+        run_5min_sync_job()   # Run immediately on startup
+    except Exception as e:
+        logging.error(f"Initial sync failed (engine will retry on schedule): {e}")
 
     print("Sync engine running. Press Ctrl+C or send SIGTERM to stop gracefully.")
 
