@@ -11,8 +11,6 @@
 #              Never commit .env to version control.
 # =============================================================================
 
-version: "3.8"
-
 services:
   # ── Market Data Sync Engine ─────────────────────────────────────────────────
   # Runs the 5-minute sync loop, upserts to Supabase
