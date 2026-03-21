@@ -2,11 +2,12 @@ import os
 from fastapi import FastAPI, Depends, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 
 from routers import auth, admin, data
+from routers.auth import get_current_user
 
 load_dotenv()
 
@@ -33,12 +34,31 @@ app.include_router(data.router)
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    # Redirect to dashboard or login
-    from routers.auth import get_current_user
     user = get_current_user(request)
-    if user:
-        return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
-    return templates.TemplateResponse("login.html", {"request": request})
+    if not user:
+        return RedirectResponse(url="/auth/login", status_code=303)
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+@app.get("/config", response_class=HTMLResponse)
+async def config_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/auth/login", status_code=303)
+    return templates.TemplateResponse("config.html", {"request": request})
+
+@app.get("/maintenance", response_class=HTMLResponse)
+async def maintenance_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/auth/login", status_code=303)
+    return templates.TemplateResponse("maintenance.html", {"request": request})
+
+@app.get("/logs", response_class=HTMLResponse)
+async def logs_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/auth/login", status_code=303)
+    return templates.TemplateResponse("logs.html", {"request": request})
 
 if __name__ == "__main__":
     import uvicorn
