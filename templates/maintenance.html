@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block title %}Maintenance — Data Engine{% endblock %}
+
+{% block styles %}
+<style>
+.maint-page {
+  padding: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.maint-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+.maint-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.maint-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.maint-section-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.maint-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+}
+.maint-btn-primary { background: var(--accent); color: #fff; }
+.maint-btn-primary:hover { background: var(--accent-h); }
+.maint-btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+.maint-btn-secondary:hover { border-color: var(--hover); color: var(--text); }
+.maint-btn-danger { background: var(--danger); color: #fff; }
+.maint-btn-danger:hover { opacity: 0.9; }
+
+/* Status badge */
+.token-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.token-badge.success { background: #22c55e20; color: var(--success); }
+.token-badge.warning { background: #eab30820; color: var(--warning); }
+.token-badge.danger { background: #ef444420; color: var(--danger); }
+.token-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* Data maintenance */
+.maint-sub-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.maint-sub-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.maint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.maint-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.maint-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+  border-color: var(--accent);
+}
+.maint-result {
+  margin-top: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--muted);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Confirm modal */
+.maint-confirm {
+  display: none;
+  margin-top: 12px;
+  padding: 12px;
+  background: #ef444420;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+}
+.maint-confirm.show { display: block; }
+.maint-confirm-text { font-size: 12px; color: var(--danger); margin-bottom: 8px; }
+.maint-confirm-actions { display: flex; gap: 8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="tab-maintenance" class="tab-content active">
+
+  <div class="maint-page">
+
+    {# Section 1: Upstox Token #}
+    <div class="maint-section">
+      <div class="maint-section-header">
+        <div class="maint-section-title">Upstox Token</div>
+        <div class="token-badge success" id="token-badge">
+          <span class="token-badge-dot"></span>
+          <span id="token-badge-text">Checking...</span>
+        </div>
+      </div>
+      <div class="maint-section-sub">Your daily access token expires — refresh without terminal access.</div>
+      <a href="/auth/login-upstox" class="maint-btn maint-btn-primary">Refresh Token</a>
+    </div>
+
+    {# Section 2: Data Maintenance #}
+    <div class="maint-section">
+      <div class="maint-section-title">Data Maintenance</div>
+      <div class="maint-section-sub">Analyze and prune old chunks to manage database size.</div>
+
+      {# Sub-section A: Chunk Analysis #}
+      <div class="maint-sub-section">
+        <div class="maint-sub-label">Chunk Analysis</div>
+        <div class="maint-row">
+          <label for="prune-end-date" style="font-size:12px;color:var(--muted)">Drop chunks older than</label>
+          <input type="date" id="prune-end-date" class="maint-input">
+          <button class="maint-btn maint-btn-secondary" onclick="analyzeChunks()">Analyze</button>
+        </div>
+        <div class="maint-result" id="analyze-result">Select a date and click Analyze.</div>
+      </div>
+
+      {# Sub-section B: Execute Pruning #}
+      <div class="maint-sub-section">
+        <div class="maint-sub-label">Execute drop_chunks()</div>
+        <button class="maint-btn maint-btn-danger" onclick="showPruneConfirm()">Drop Chunks</button>
+        <div class="maint-confirm" id="prune-confirm">
+          <div class="maint-confirm-text">This will permanently delete chunks older than the selected date. This cannot be undone.</div>
+          <div class="maint-confirm-actions">
+            <button class="maint-btn maint-btn-danger" onclick="executePrune()">Drop Now</button>
+            <button class="maint-btn maint-btn-secondary" onclick="hidePruneConfirm()">Cancel</button>
+          </div>
+        </div>
+        <div class="maint-result" id="prune-result"></div>
+      </div>
+    </div>
+
+    {# Section 3: Data Integrity Audit #}
+    <div class="maint-section">
+      <div class="maint-section-title">Data Integrity Audit</div>
+      <div class="maint-section-sub">Checks for gaps in 5-min candle series (last 24h).</div>
+      <button class="maint-btn maint-btn-secondary" onclick="runAudit()">Run Audit</button>
+      <div class="maint-result" id="audit-result">Click Run Audit to check for data gaps.</div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ---------- Token badge (from alerts) ----------
+async function loadTokenStatus() {
+  try {
+    const resp = await fetch('/admin/alerts');
+    const alerts = await resp.json();
+    const tokenAlert = alerts.find(a =>
+      a.message.includes('token') || a.message.includes('Token')
+    );
+    const badge = document.getElementById('token-badge');
+    const text = document.getElementById('token-badge-text');
+    if (!badge || !text) return;
+
+    if (tokenAlert) {
+      const level = tokenAlert.level;
+      badge.className = 'token-badge ' + level;
+      if (level === 'success') text.textContent = 'Valid';
+      else if (level === 'warning') text.textContent = 'Expiring soon';
+      else if (level === 'danger') text.textContent = 'Expired';
+      else text.textContent = 'Unknown';
+    } else {
+      badge.className = 'token-badge warning';
+      text.textContent = 'Unknown';
+    }
+  } catch (e) {
+    // Silently fail
+  }
+}
+
+// ---------- Chunk Analysis ----------
+async function analyzeChunks() {
+  const endDate = document.getElementById('prune-end-date').value;
+  const result = document.getElementById('analyze-result');
+  if (!endDate) {
+    result.innerHTML = '<span style="color:var(--warning)">Please select a date first.</span>';
+    return;
+  }
+  result.innerHTML = '<span style="color:var(--dim)">Analyzing...</span>';
+  try {
+    const resp = await fetch('/data/prune-estimate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'end_date=' + encodeURIComponent(endDate),
+    });
+    const html = await resp.text();
+    result.innerHTML = html;
+  } catch (e) {
+    result.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
+  }
+}
+
+// ---------- Prune confirm ----------
+function showPruneConfirm() {
+  document.getElementById('prune-confirm').classList.add('show');
+}
+function hidePruneConfirm() {
+  document.getElementById('prune-confirm').classList.remove('show');
+}
+
+// ---------- Execute Pruning ----------
+async function executePrune() {
+  const endDate = document.getElementById('prune-end-date').value;
+  const result = document.getElementById('prune-result');
+  hidePruneConfirm();
+  result.innerHTML = '<span style="color:var(--dim)">Executing...</span>';
+  try {
+    const resp = await fetch('/data/prune-execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'end_date=' + encodeURIComponent(endDate),
+    });
+    const html = await resp.text();
+    result.innerHTML = html;
+  } catch (e) {
+    result.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
+  }
+}
+
+// ---------- Audit ----------
+async function runAudit() {
+  const result = document.getElementById('audit-result');
+  result.innerHTML = '<span style="color:var(--dim)">Running audit...</span>';
+  try {
+    const resp = await fetch('/data/audit');
+    const html = await resp.text();
+    result.innerHTML = html;
+  } catch (e) {
+    result.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
+  }
+}
+
+// ---------- Init ----------
+document.addEventListener('DOMContentLoaded', () => {
+  loadTokenStatus();
+  // Set default date to today
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('prune-end-date').value = today;
+});
+</script>
+{% endblock %}
