@@ -455,11 +455,19 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
+log_info "Validating docker-compose.yml..."
+if ! docker compose -p "$PROJECT_NAME" config > /dev/null 2>&1; then
+    log_error "docker-compose.yml validation failed:"
+    docker compose -p "$PROJECT_NAME" config 2>&1 | head -20
+    exit 1
+fi
+
 log_info "Building Docker images (may take a few minutes)..."
 if docker compose -p "$PROJECT_NAME" build 2>&1 | tail -5; then
     log_success "Docker images built"
 else
     log_error "Docker build failed — check Dockerfile and requirements.txt"
+    docker compose -p "$PROJECT_NAME" build 2>&1 | grep -E "(ERROR|error|failed|Error)" | head -10
     exit 1
 fi
 

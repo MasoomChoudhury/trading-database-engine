@@ -110,6 +110,3 @@ services:
 networks:
   db_engine_net:
     driver: bridge
-
-volumes:
-  # timescaledb_data:   # Uncomment if enabling TimescaleDB above
