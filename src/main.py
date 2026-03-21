@@ -1,9 +1,121 @@
 import time
 import schedule
 import datetime
+import threading
+import signal
+import sys
+import os
+import logging
+import requests  # noqa: E402  (used in token validation)
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 from fetcher import create_fetcher
 from processor.indicator_engine import CalculationEngine
 from database.supabase_client import RemoteDBWatcher
+
+# ── Health Server (port 8001) ─────────────────────────────────────────────────
+# Used by docker-compose healthcheck to verify the sync engine is alive.
+# Responds with 200 if the scheduler loop is running.
+
+_health_server_port = int(os.getenv("HEALTH_PORT", "8001"))
+_engine_ready = False
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def log_message(self, *args): ...  # Suppress request noise
+
+    def do_GET(self):
+        if self.path == "/health" and _engine_ready:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+        else:
+            self.send_response(503)
+            self.end_headers()
+
+def _start_health_server():
+    server = HTTPServer(("0.0.0.0", _health_server_port), HealthHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    logging.info(f"Health server listening on :{_health_server_port}")
+
+# ── Graceful Shutdown ─────────────────────────────────────────────────────────
+_shutdown_requested = False
+
+def _request_shutdown(signum, frame):
+    global _shutdown_requested
+    logging.warning(f"Received signal {signum} — scheduling graceful shutdown...")
+    _shutdown_requested = True
+
+# ── Token Validation + Refresh ─────────────────────────────────────────────────
+def _validate_upstox_token():
+    """
+    Validates the stored Upstox access token at startup.
+    If the token is missing, expired, or returns 401, attempts to refresh
+    using UPSTOX_REFRESH_TOKEN (set this in .env alongside UPSTOX_ACCESS_TOKEN).
+    """
+    token = os.getenv("UPSTOX_ACCESS_TOKEN")
+    refresh_token = os.getenv("UPSTOX_REFRESH_TOKEN")
+
+    if not token:
+        logging.error("UPSTOX_ACCESS_TOKEN is not set in .env")
+        return False
+
+    # Quick LTP test to check if token is alive
+    try:
+        resp = requests.get(
+            "https://api.upstox.com/v3/market-quote/ltp",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"instrument_key": "NSE_INDEX|Nifty 50"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            logging.info("Upstox token validated — connection OK")
+            return True
+        # Token expired or invalid
+        logging.warning(f"Upstox token rejected ({resp.status_code}). Attempting refresh...")
+    except Exception as e:
+        logging.warning(f"Upstox token validation request failed: {e}. Attempting refresh...")
+
+    # Attempt refresh with refresh_token
+    if not refresh_token:
+        logging.error(
+            "UPSTOX_REFRESH_TOKEN not set in .env. "
+            "Add UPSTOX_REFRESH_TOKEN=<your_refresh_token> to refresh automatically."
+        )
+        return False
+
+    try:
+        resp = requests.post(
+            "https://api.upstox.com/v2/login/authorization/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": os.getenv("UPSTOX_API_KEY"),
+                "client_secret": os.getenv("UPSTOX_API_SECRET"),
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded", "accept": "application/json"},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            new_token = data.get("access_token")
+            if new_token:
+                # Update .env file so the token persists across container restarts.
+                # .env lives at the project root (/app), not next to main.py (/app/src).
+                from dotenv import set_key
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                env_path = os.path.join(script_dir, os.pardir, ".env")
+                if os.path.exists(env_path):
+                    set_key(env_path, "UPSTOX_ACCESS_TOKEN", new_token)
+                os.environ["UPSTOX_ACCESS_TOKEN"] = new_token
+                logging.info("Upstox token refreshed successfully — new token saved to .env")
+                return True
+        logging.error(f"Token refresh failed: {resp.text[:300]}")
+    except Exception as e:
+        logging.error(f"Token refresh request failed: {e}")
+
+    return False
 
 def resample_ohlc(data, interval='5min'):
     if not data or len(data) == 0:
@@ -634,20 +746,42 @@ def run_5min_sync_job():
         print(f"Error during job execution: {e}")
 
 if __name__ == "__main__":
-    print("Initializing Data Engine Orchestrator...")
-    
-    # Ensure timescaledb is initialized on startup if needed
-    # from database.timescale_client import init_db
-    # init_db()
-    
-    # Schedule the job every 5 minutes
-    # It's usually best to offset it slightly to ensure the preceding candle is fully closed
+    # ── Logging ───────────────────────────────────────────────────────────────
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # ── Graceful shutdown ───────────────────────────────────────────────────
+    signal.signal(signal.SIGTERM, _request_shutdown)
+    signal.signal(signal.SIGINT, _request_shutdown)
+
+    # ── Health server ─────────────────────────────────────────────────────
+    _start_health_server()
+
+    # ── Token validation ────────────────────────────────────────────────────
+    print("Validating Upstox credentials...")
+    if not _validate_upstox_token():
+        print("WARNING: Upstox token is invalid or refresh failed. Engine starting anyway — sync will fail.")
+        print("         Fix: run 'python upstox_auth.py' to get a new token, then restart.")
+    else:
+        print("Upstox credentials OK.")
+
+    # ── Scheduler ──────────────────────────────────────────────────────────
     schedule.every(5).minutes.at(":05").do(run_5min_sync_job)
-    
-    # Run once immediately for testing/warmup
-    run_5min_sync_job()
-    
-    print("Listening for 5-minute boundaries...")
-    while True:
+
+    print("Starting 5-minute sync loop...")
+    run_5min_sync_job()   # Run immediately on startup
+
+    _engine_ready = True   # Module-level variable — health endpoint now returns 200
+
+    print("Sync engine running. Press Ctrl+C or send SIGTERM to stop gracefully.")
+
+    # ── Main loop ──────────────────────────────────────────────────────────
+    while not _shutdown_requested:
         schedule.run_pending()
         time.sleep(1)
+
+    print("Shutdown signal received — finishing current cycle...")
+    sys.exit(0)

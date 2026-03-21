@@ -1,13 +1,10 @@
 import logging
 import pandas as pd
-try:
-    import pandas_ta as ta
-except ImportError:
-    print("Warning: pandas_ta not found. Technical indicators will be skipped.")
-    ta = None
+import pandas_ta as ta
 
 # Module constant: NIFTY lot size (standard for Indian markets)
-LOT_SIZE = 25
+# Updated January 2026: NSE reduced lot size from 75 to 65 shares per lot
+LOT_SIZE = 65
 
 logger = logging.getLogger(__name__)
 
@@ -560,8 +557,9 @@ class CalculationEngine:
                 # Find overlapping bins
                 overlapping_bins = []
                 for b_range in vol_profile.keys():
-                    # If bin max > candle low AND bin min < candle high, they overlap
-                    if b_range[1] >= low and b_range[0] <= high:
+                    # Bins have exclusive upper bounds [lower, upper). Use strict inequalities
+                    # so bins that only touch at a point (low == b_range[1]) are not included.
+                    if b_range[1] > low and b_range[0] < high:
                         overlapping_bins.append(b_range)
                 
                 if overlapping_bins:
@@ -1303,12 +1301,13 @@ class CalculationEngine:
             
         # 3. Bollinger Bands
         # pandas_ta column naming for BBands(20, 2):
-        # BBL_20_2.0: lower, BBM_20_2.0: middle, BBU_20_2.0: upper, BBB_20_2.0: bandwidth, BBP_20_2.0: percent b
-        bbl = indicators_dict.get('BBL_20_2.0')
-        bbm = indicators_dict.get('BBM_20_2.0')
-        bbu = indicators_dict.get('BBU_20_2.0')
-        bbb = indicators_dict.get('BBB_20_2.0')
-        bbp = indicators_dict.get('BBP_20_2.0')
+        # Before lowercase: BBL_20_2.0_2.0, BBM_20_2.0_2.0, BBU_20_2.0_2.0, BBB_20_2.0_2.0, BBP_20_2.0_2.0
+        # After df.columns.str.lower() → bbl_20_2.0_2.0, etc.
+        bbl = indicators_dict.get('bbl_20_2.0_2.0')
+        bbm = indicators_dict.get('bbm_20_2.0_2.0')
+        bbu = indicators_dict.get('bbu_20_2.0_2.0')
+        bbb = indicators_dict.get('bbb_20_2.0_2.0')
+        bbp = indicators_dict.get('bbp_20_2.0_2.0')
         
         if bbl is not None and not pd.isna(bbl):
             # Calculate signal based on percent B
@@ -1555,130 +1554,205 @@ class CalculationEngine:
 
         return results
 
+    def _safe_num(self, value, decimals=4):
+        """Safely convert a numeric value, returning None if NaN/missing."""
+        if value is None:
+            return None
+        try:
+            f = float(value)
+            return round(f, decimals) if not pd.isna(f) else None
+        except (TypeError, ValueError):
+            return None
+
+    # Maps lowercase pandas-ta column names (from df.columns.str.lower())
+    # to DB column names (underscores, no dots).
+    _PANDAS_TA_TO_DB: dict[str, str] = {
+        # Bollinger Bands (length=20, std=2.0 → BBL_20_2.0_2.0 after pandas-ta lowercased)
+        "bbl_20_2.0_2.0": "bbl_20_2_0",
+        "bbm_20_2.0_2.0": "bbm_20_2_0",
+        "bbu_20_2.0_2.0": "bbu_20_2_0",
+        "bbb_20_2.0_2.0": "bbb_20_2_0",
+        "bbp_20_2.0_2.0": "bbp_20_2_0",
+        # Supertrend (length=7, multiplier=3.0 → SUPERT_7_3.0 after pandas-ta lowercased)
+        "supert_7_3.0": "supert_10_3",
+        "supertd_7_3.0": "supertd_10_3",
+        "supertl_7_3.0": "supertl_10_3",
+        "superts_7_3.0": "superts_10_3",
+    }
+
+    def _lowercase_top_level_keys(self, d: dict) -> dict:
+        """
+        Lowercases top-level keys for Postgres identifier compatibility.
+        Uses explicit pandas-ta name mapping for dotted columns.
+        pandas-ta generates uppercase keys (e.g. 'BBL_20_2.0_2.0') so we first
+        lowercase them to match the _PANDAS_TA_TO_DB lookup keys.
+        """
+        out = {}
+        for k, v in d.items():
+            lowered = k.lower()
+            db_key = self._PANDAS_TA_TO_DB.get(lowered, lowered)
+            out[db_key] = v
+        return out
+
     def generate_5min_sync_payload(self, current_timestamp, synthetic_ohlc, net_gex, indicators_dict):
         """
-        Packages the calculated data into a single row dictionary 
+        Packages the calculated data into a single row dictionary
         ready to be stored in the Supabase `market_data` table.
+
+        Schema design:
+        - Scalar columns (top-level): for fast WHERE/HAVING queries by the agent
+        - JSONB columns: for rich context objects, accessed via ->> or full object fetch
+        - timestamp (PK, timestamptz): precise candle-close time in IST
         """
-        # Standardize timestamp key to 'timestamp' to match data.py and common conventions
-        ts_iso = current_timestamp.isoformat()
-        
+        ind = indicators_dict  # shorthand
+
+        # Helper to safely extract indicator values with pandas-na handling
+        def safe_val(key, fallback=None):
+            val = ind.get(key, fallback)
+            if val is None:
+                return None
+            try:
+                f = float(val)
+                return f if not pd.isna(f) else None
+            except (TypeError, ValueError):
+                return None
+
         payload = {
-            "timestamp": ts_iso,
-            "ts": ts_iso, # Maintain 'ts' for backward compatibility in some queries
-            "datetime": str(current_timestamp),
+            # ── Primary Key ──────────────────────────────────────────────
+            # Supabase uses `timestamp` as the unique PK. IST timestamps are stored
+            # as timezone-aware so queries like "data at 9:30 AM" work correctly.
+            "timestamp": current_timestamp.isoformat(),
+
+            # ── Symbol ───────────────────────────────────────────────────
             "symbol": "NIFTY50",
-            
-            # Synthetic Market Overview
-            "Open": float(synthetic_ohlc['open']) if synthetic_ohlc['open'] is not None else None,
-            "High": float(synthetic_ohlc['high']) if synthetic_ohlc['high'] is not None else None,
-            "Low": float(synthetic_ohlc['low']) if synthetic_ohlc['low'] is not None else None,
-            "Close": float(synthetic_ohlc['close']) if synthetic_ohlc['close'] is not None else None,
-            "Volume": int(synthetic_ohlc['volume']) if synthetic_ohlc['volume'] is not None else None,
-            "OI": 0, # Placeholder until Upstox futures OI is integrated
-            
-            # Nested OHLC for TradingView Charts (expects 'historical_time_series')
-            "historical_time_series": {
-                "open": float(synthetic_ohlc['open']) if synthetic_ohlc['open'] is not None else None,
-                "high": float(synthetic_ohlc['high']) if synthetic_ohlc['high'] is not None else None,
-                "low": float(synthetic_ohlc['low']) if synthetic_ohlc['low'] is not None else None,
-                "close": float(synthetic_ohlc['close']) if synthetic_ohlc['close'] is not None else None,
-                "volume": int(synthetic_ohlc['volume']) if synthetic_ohlc['volume'] is not None else None
+
+            # ── OHLCV ────────────────────────────────────────────────────
+            "Open": self._safe_num(synthetic_ohlc.get('open')),
+            "High": self._safe_num(synthetic_ohlc.get('high')),
+            "Low": self._safe_num(synthetic_ohlc.get('low')),
+            "Close": self._safe_num(synthetic_ohlc.get('close')),
+            "Volume": int(synthetic_ohlc['volume']) if synthetic_ohlc.get('volume') else None,
+            "OI": 0,  # Placeholder — integrate Upstox futures OI when available
+
+            # ── Core Indicators (scalar columns) ──────────────────────────
+            "VWAP_D": self._safe_num(ind.get('vwap'), decimals=2),
+            "EMA_21": self._safe_num(ind.get('ema_21'), decimals=2),
+            "EMA_50": self._safe_num(ind.get('ema_50'), decimals=2),
+            "RSI_14": self._safe_num(ind.get('rsi_14')),
+            "ADX_14": self._safe_num(ind.get('adx_14')),
+            "ADXR_14_2": self._safe_num(ind.get('adxr_14_2')),
+            "DMP_14": self._safe_num(ind.get('dmp_14')),
+            "DMN_14": self._safe_num(ind.get('dmn_14')),
+            "ATRr_14": self._safe_num(ind.get('atrr_14')),
+
+            # MACD — pandas-ta generates MACD_12_26_9, MACDh_12_26_9, MACDs_12_26_9
+            # After df.columns.str.lower() → macd_12_26_9, macdh_12_26_9, macds_12_26_9
+            "MACD_12_26_9": self._safe_num(ind.get('macd_12_26_9')),
+            "MACDh_12_26_9": self._safe_num(ind.get('macdh_12_26_9')),
+            "MACDs_12_26_9": self._safe_num(ind.get('macds_12_26_9')),
+
+            # Bollinger Bands — pandas-ta (length=20, std=2.0)
+            # pandas-ta format: BBL_{length}_{std}_{2.0} → lowercased: bbl_20_2.0_2.0
+            "BBL_20_2.0_2.0": self._safe_num(ind.get('bbl_20_2.0_2.0')),
+            "BBM_20_2.0_2.0": self._safe_num(ind.get('bbm_20_2.0_2.0')),
+            "BBU_20_2.0_2.0": self._safe_num(ind.get('bbu_20_2.0_2.0')),
+            "BBB_20_2.0_2.0": self._safe_num(ind.get('bbb_20_2.0_2.0')),
+            "BBP_20_2.0_2.0": self._safe_num(ind.get('bbp_20_2.0_2.0')),
+
+            # Supertrend — pandas-ta (length=7, multiplier=3.0)
+            # pandas-ta format: SUPERT_{length}_{multiplier} → lowercased: supert_7_3.0
+            # Mapping converts to DB column 'supert_10_3' (DB uses length=10 naming convention)
+            "SUPERT_7_3.0": self._safe_num(ind.get('supert_7_3.0')),
+            "SUPERTd_7_3.0": self._safe_num(ind.get('supertd_7_3.0')),
+            # supertl is NaN in bullish trends — pandas-ta uses NaN to indicate "no lower band"
+            "SUPERTl_7_3.0": self._safe_num(ind.get('supertl_7_3.0')) if not pd.isna(ind.get('supertl_7_3.0')) else None,
+            "SUPERTs_7_3.0": self._safe_num(ind.get('superts_7_3.0')),
+
+            # Stochastic RSI — pandas-ta (length=14, rsi_length=14, k=3, d=3)
+            # Before lowercase: STOCHRSIk_14_14_3_3 → after: stochrsik_14_14_3_3
+            "STOCHRSIk_14_14_3_3": self._safe_num(ind.get('stochrsik_14_14_3_3')),
+            "STOCHRSId_14_14_3_3": self._safe_num(ind.get('stochrsid_14_14_3_3')),
+
+            # ── Derived Metrics (scalar columns) ─────────────────────────
+            "net_gex": self._safe_num(net_gex),
+            "opening_range_status": ind.get('opening_range_status', 'Unknown'),
+            # Note: main.py passes 'cpr_relationship' but DB column is 'cpr_status'
+            "cpr_status": ind.get('cpr_relationship', 'Unknown'),
+            "cpr_width": ind.get('cpr_width', 'Unknown'),
+            # vwap_status is a dict from compute_vwap_status_dict — extract string for scalar col
+            "vwap_status": ind.get('vwap_status', {}).get('price_vs_vwap', 'Unknown'),
+
+            # ── JSONB: Session Meta ───────────────────────────────────────
+            "meta": {
+                "ticker": ind.get('meta', {}).get('ticker', 'NIFTY'),
+                "live_price": self._safe_num(ind.get('meta', {}).get('live_price')),
+                "is_index": ind.get('meta', {}).get('is_index', True),
+                "session_phase": ind.get('meta', {}).get('session_phase', 'Unknown'),
+                "market_time": ind.get('meta', {}).get('market_time', ''),
+                "timestamp": ind.get('meta', {}).get('timestamp', ''),
             },
-            # Simple Core Indicators (Top Level)
-            "VWAP_D": round(float(indicators_dict.get('vwap', 0.0)), 2) if indicators_dict.get('vwap') else None,
-            "EMA_21": round(float(indicators_dict.get('ema_21', 0.0)), 2) if indicators_dict.get('ema_21') else None,
-            "EMA_50": round(float(indicators_dict.get('ema_50', 0.0)), 2) if indicators_dict.get('ema_50') else None,
-            "RSI_14": float(indicators_dict.get('rsi_14')) if indicators_dict.get('rsi_14') is not None and not pd.isna(indicators_dict.get('rsi_14')) else None,
-            "ADX_14": float(indicators_dict.get('ADX_14')) if indicators_dict.get('ADX_14') is not None and not pd.isna(indicators_dict.get('ADX_14')) else None,
-            # Note: pandas-ta does not append ADXR by default in adx(), but we fetch it if it exists.
-            "ADXR_14_2": float(indicators_dict.get('ADXR_14_2')) if indicators_dict.get('ADXR_14_2') is not None and not pd.isna(indicators_dict.get('ADXR_14_2')) else None,
-            "DMP_14": float(indicators_dict.get('DMP_14')) if indicators_dict.get('DMP_14') is not None and not pd.isna(indicators_dict.get('DMP_14')) else None,
-            "DMN_14": float(indicators_dict.get('DMN_14')) if indicators_dict.get('DMN_14') is not None and not pd.isna(indicators_dict.get('DMN_14')) else None,
-            "ATRr_14": float(indicators_dict.get('ATRr_14')) if indicators_dict.get('ATRr_14') is not None and not pd.isna(indicators_dict.get('ATRr_14')) else None,
-            "MACD_12_26_9": float(indicators_dict.get('macd_12_26_9')) if indicators_dict.get('macd_12_26_9') is not None and not pd.isna(indicators_dict.get('macd_12_26_9')) else None,
-            "MACDh_12_26_9": float(indicators_dict.get('macdh_12_26_9')) if indicators_dict.get('macdh_12_26_9') is not None and not pd.isna(indicators_dict.get('macdh_12_26_9')) else None,
-            "MACDs_12_26_9": float(indicators_dict.get('macds_12_26_9')) if indicators_dict.get('macds_12_26_9') is not None and not pd.isna(indicators_dict.get('macds_12_26_9')) else None,
-            
-            # BBands Top Level (Handling potential pandas-ta naming variations)
-            "BBL_20_2.0_2.0": float(indicators_dict.get('BBL_20_2.0_2.0', indicators_dict.get('BBL_20_2.0'))) if indicators_dict.get('BBL_20_2.0_2.0', indicators_dict.get('BBL_20_2.0')) is not None and not pd.isna(indicators_dict.get('BBL_20_2.0_2.0', indicators_dict.get('BBL_20_2.0'))) else None,
-            "BBM_20_2.0_2.0": float(indicators_dict.get('BBM_20_2.0_2.0', indicators_dict.get('BBM_20_2.0'))) if indicators_dict.get('BBM_20_2.0_2.0', indicators_dict.get('BBM_20_2.0')) is not None and not pd.isna(indicators_dict.get('BBM_20_2.0_2.0', indicators_dict.get('BBM_20_2.0'))) else None,
-            "BBU_20_2.0_2.0": float(indicators_dict.get('BBU_20_2.0_2.0', indicators_dict.get('BBU_20_2.0'))) if indicators_dict.get('BBU_20_2.0_2.0', indicators_dict.get('BBU_20_2.0')) is not None and not pd.isna(indicators_dict.get('BBU_20_2.0_2.0', indicators_dict.get('BBU_20_2.0'))) else None,
-            "BBB_20_2.0_2.0": float(indicators_dict.get('BBB_20_2.0_2.0', indicators_dict.get('BBB_20_2.0'))) if indicators_dict.get('BBB_20_2.0_2.0', indicators_dict.get('BBB_20_2.0')) is not None and not pd.isna(indicators_dict.get('BBB_20_2.0_2.0', indicators_dict.get('BBB_20_2.0'))) else None,
-            "BBP_20_2.0_2.0": float(indicators_dict.get('BBP_20_2.0_2.0', indicators_dict.get('BBP_20_2.0'))) if indicators_dict.get('BBP_20_2.0_2.0', indicators_dict.get('BBP_20_2.0')) is not None and not pd.isna(indicators_dict.get('BBP_20_2.0_2.0', indicators_dict.get('BBP_20_2.0'))) else None,
-            
-            # Supertrend Top Level
-            "SUPERT_10_3.0": float(indicators_dict.get('SUPERT_10_3.0')) if indicators_dict.get('SUPERT_10_3.0') is not None and not pd.isna(indicators_dict.get('SUPERT_10_3.0')) else None,
-            "SUPERTd_10_3.0": float(indicators_dict.get('SUPERTd_10_3.0')) if indicators_dict.get('SUPERTd_10_3.0') is not None and not pd.isna(indicators_dict.get('SUPERTd_10_3.0')) else None,
-            "SUPERTl_10_3.0": float(indicators_dict.get('SUPERTl_10_3.0')) if indicators_dict.get('SUPERTl_10_3.0') is not None and not pd.isna(indicators_dict.get('SUPERTl_10_3.0')) else None,
-            "SUPERTs_10_3.0": float(indicators_dict.get('SUPERTs_10_3.0')) if indicators_dict.get('SUPERTs_10_3.0') is not None and not pd.isna(indicators_dict.get('SUPERTs_10_3.0')) else None,
-            
-            # StochRSI Top Level
-            "STOCHRSIk_14_14_3_3": float(indicators_dict.get('STOCHRSIk_14_14_3_3')) if indicators_dict.get('STOCHRSIk_14_14_3_3') is not None and not pd.isna(indicators_dict.get('STOCHRSIk_14_14_3_3')) else None,
-            "STOCHRSId_14_14_3_3": float(indicators_dict.get('STOCHRSId_14_14_3_3')) if indicators_dict.get('STOCHRSId_14_14_3_3') is not None and not pd.isna(indicators_dict.get('STOCHRSId_14_14_3_3')) else None,
-            
-            # Complex/Nested Market Context
-            "net_gex": float(net_gex),
-            "opening_range_status": indicators_dict.get('opening_range_status', "Unknown"),
-            "cpr_relationship": indicators_dict.get('cpr_relationship', "Unknown"),
-            "cpr_width": indicators_dict.get('cpr_width', "Unknown"),
-            
-            # Dictionary Objects
-            "meta": indicators_dict.get('meta', {}),
-            "catalyst_context": indicators_dict.get('catalyst_context', {}),
-            "index_macro": indicators_dict.get('index_macro', {}),
-            "vix_context": indicators_dict.get('vix_context', "Unknown"),
-            
-            "advanced_metrics": {
-                "futures_basis": indicators_dict.get('cost_of_carry', {}),
-                "true_vwap": indicators_dict.get('true_vwap', {}),
-                "vwap_context": indicators_dict.get('vwap_context', {})
+
+            # ── JSONB: Catalyst / Gap Analysis ───────────────────────────
+            "catalyst_context": ind.get('catalyst_context', {}),
+
+            # ── JSONB: Index Macro / VIX ────────────────────────────────
+            "index_macro": ind.get('index_macro', {}),
+
+            # ── JSONB: VIX Context (separate for fast access) ───────────
+            "vix_context": {
+                "vix_level": ind.get('index_macro', {}).get('vix', {}).get('level', 0),
+                "vix_change": ind.get('index_macro', {}).get('vix', {}).get('change', 0),
+                "vix_velocity": ind.get('index_macro', {}).get('vix_velocity', 'Unknown'),
+                "vix_crush_detected": ind.get('index_macro', {}).get('vix_crush_detected', False),
             },
-            
-            "options_positioning": {
-                "pcr_level": indicators_dict.get('pcr', {}).get('current_pcr', 0.0),
-                "pcr_interpretation": indicators_dict.get('pcr', {}).get('leverage_signal', "Unknown"),
-                "oi_data_status": "Live Snapshot Active" if indicators_dict.get('pcr', {}).get('current_pcr', 0) > 0 else "Offline",
-                "max_pain": indicators_dict.get('max_pain', {}).get('max_pain_strike', 0.0),
-                "top_oi_call": indicators_dict.get('gamma_walls', {}).get('call_wall_strike', 0.0),
-                "top_oi_put": indicators_dict.get('gamma_walls', {}).get('put_wall_strike', 0.0)
-            },
-            
+
+            # ── JSONB: Options Macro (PCR, Max Pain, Gamma) ─────────────
             "options_macro": {
-                "net_gex": net_gex,
-                "max_pain": indicators_dict.get('max_pain', {}),
-                "pcr": indicators_dict.get('pcr', {}),
-                "gamma_walls": indicators_dict.get('gamma_walls', {}),
-                "gamma_flip_point": indicators_dict.get('gamma_flip_point', 0.0),
-                "distance_to_gamma": indicators_dict.get('distance_to_gamma', "N/A"),
-                "gamma_wall_proximity": indicators_dict.get('gamma_walls', {}).get("gamma_wall_proximity", False)
+                "net_gex": self._safe_num(net_gex),
+                "pcr": ind.get('pcr', {}),
+                "max_pain": ind.get('max_pain', {}),
+                "gamma_walls": ind.get('gamma_walls', {}),
+                "gamma_flip_point": self._safe_num(ind.get('gamma_flip_point')),
+                "distance_to_gamma": ind.get('distance_to_gamma', 'N/A'),
+                "gamma_wall_proximity": ind.get('gamma_walls', {}).get('gamma_wall_proximity', False),
             },
-            "vwap_status": indicators_dict.get('vwap_status', {}),
-            
+
+            # ── JSONB: Advanced Metrics (futures basis, VWAP) ───────────
+            "advanced_metrics": {
+                "cost_of_carry": ind.get('cost_of_carry', {}),
+                "true_vwap": ind.get('true_vwap', {}),
+                "vwap_context": ind.get('vwap_context', {}),
+            },
+
+            # ── JSONB: Options Chain Analysis ────────────────────────────
             "options_chain_analysis": {
-                "pcr": indicators_dict.get('pcr', {}).get('live_pcr', None),
-                "call_wall": indicators_dict.get('gamma_walls', {}).get('call_wall_strike', None),
-                "call_wall_oi_change": indicators_dict.get('gamma_walls', {}).get('call_wall_oi_change', None),
-                "put_wall": indicators_dict.get('gamma_walls', {}).get('put_wall_strike', None),
-                "put_wall_oi_change": indicators_dict.get('gamma_walls', {}).get('put_wall_oi_change', None),
-                "max_pain": indicators_dict.get('max_pain', {}).get('max_pain_strike', None),
-                "net_gex": float(net_gex) if net_gex is not None else None,
-                "atm_iv": indicators_dict.get('atm_iv', None), 
-                "atm_iv_change": None,
-                "base_price": float(synthetic_ohlc['close']) if synthetic_ohlc['close'] is not None else None
+                "pcr": self._safe_num(ind.get('pcr', {}).get('live_pcr')),
+                "call_wall": self._safe_num(ind.get('gamma_walls', {}).get('call_wall_strike')),
+                "put_wall": self._safe_num(ind.get('gamma_walls', {}).get('put_wall_strike')),
+                "call_wall_oi_change": self._safe_num(ind.get('gamma_walls', {}).get('call_wall_oi_change')),
+                "put_wall_oi_change": self._safe_num(ind.get('gamma_walls', {}).get('put_wall_oi_change')),
+                "max_pain": self._safe_num(ind.get('max_pain', {}).get('max_pain_strike')),
+                "net_gex": self._safe_num(net_gex),
+                "atm_iv": self._safe_num(ind.get('atm_iv')),
+                "atm_iv_change": self._safe_num(ind.get('atm_iv_change')),
+                "base_price": self._safe_num(synthetic_ohlc.get('close')),
             },
-            
-            "key_intraday_levels": indicators_dict.get('key_intraday_levels', {}),
-            "momentum_burst": indicators_dict.get('momentum_burst', {}),
-            "heavyweight_vs_vwap": indicators_dict.get('heavyweight_vs_vwap', {}),
-            "market_internals": indicators_dict.get('market_internals', "Unknown"),
-            "institutional_context": indicators_dict.get('institutional_context', {}),
-            "volume_profile": indicators_dict.get('volume_profile', {}),
-            "derived_features": indicators_dict.get('derived_features', {}),
-            "technical_indicators": indicators_dict.get('technical_indicators', {}),
-            "term_structure_liquidity": indicators_dict.get('term_structure_liquidity', []),
-            "options_decision_matrix": indicators_dict.get('options_decision_matrix', []),
-            
-            "is_processed": True
+
+            # ── JSONB: Intraday Structure ────────────────────────────────
+            "key_intraday_levels": ind.get('key_intraday_levels', {}),
+            "momentum_burst": ind.get('momentum_burst', {}),
+            "institutional_context": ind.get('institutional_context', {}),
+            "heavyweight_vs_vwap": ind.get('heavyweight_vs_vwap', {}),
+            "volume_profile": ind.get('volume_profile', {}),
+            "derived_features": ind.get('derived_features', {}),
+            "market_internals": ind.get('market_internals', {}),
+
+            # ── JSONB: Arrays ───────────────────────────────────────────
+            "term_structure_liquidity": ind.get('term_structure_liquidity', []),
+            "options_decision_matrix": ind.get('options_decision_matrix', []),
+
+            # ── Processing Flag ───────────────────────────────────────────
+            "is_processed": True,
         }
-        return payload
+        # Postgres normalizes unquoted identifiers to lowercase — match that here
+        return self._lowercase_top_level_keys(payload)

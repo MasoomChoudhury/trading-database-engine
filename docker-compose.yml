@@ -1,35 +1,115 @@
-version: '3.8'
+# =============================================================================
+# Database Engine — Docker Compose
+#
+# Usage:
+#   Development:  docker-compose up
+#   Production:   docker-compose -f docker-compose.yml -p db-engine up -d
+#   View logs:    docker-compose logs -f [engine|web]
+#   Stop:         docker-compose down
+#
+# Environment: Copy .env.example to .env and fill in credentials.
+#              Never commit .env to version control.
+# =============================================================================
+
+version: "3.8"
 
 services:
-  timescaledb:
-    image: timescale/timescaledb:latest-pg15
-    container_name: local_timescaledb
-    environment:
-      POSTGRES_USER: ${TIMESCALEDB_USER}
-      POSTGRES_PASSWORD: ${TIMESCALEDB_PASSWORD}
-      POSTGRES_DB: ${TIMESCALEDB_NAME}
-    ports:
-      - "127.0.0.1:5432:5432"
-    volumes:
-      - timescaledb_data:/var/lib/postgresql/data
+  # ── Market Data Sync Engine ─────────────────────────────────────────────────
+  # Runs the 5-minute sync loop, upserts to Supabase
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: db_engine
     restart: unless-stopped
-    tmpfs:
-      - /tmp:noexec,nosuid
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
-      - DAC_OVERRIDE
-      - FOWNER
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"        # Real-time log output
+      PYTHONDONTWRITEBYTECODE: "1"
+    # Graceful shutdown: trap SIGTERM → Python exit
+    stop_grace_period: 30s
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER}" ]
-      interval: 5s
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/health || exit 1"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    command: ["src/main.py"]
+    # Mount .env as a volume so token refreshes persist without rebuild
+    volumes:
+      - ./data:/app/data:rw
+    networks:
+      - db_engine_net
+
+  # ── Admin Web Dashboard ─────────────────────────────────────────────────────
+  # FastAPI admin panel on port 8000
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: db_web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    ports:
+      - "8000:8000"
+    stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 3
+      start_period: 20s
+    command: ["src/main_web.py"]
+    volumes:
+      - ./data:/app/data:rw
+    networks:
+      - db_engine_net
+    depends_on:
+      engine:
+        condition: service_healthy
+
+  # ── TimescaleDB (optional — only if you need local high-frequency storage) ──
+  # The engine currently writes to Supabase. Enable this if you want a local
+  # TimescaleDB hypertable for raw tick data or to reduce Supabase write load.
+  # Uncomment and set TIMESCALEDB_* in .env to enable.
+  #
+  # timescaledb:
+  #   image: timescale/timescaledb:latest-pg15
+  #   container_name: local_timescaledb
+  #   environment:
+  #     POSTGRES_USER: ${TIMESCALEDB_USER:-engine}
+  #     POSTGRES_PASSWORD: ${TIMESCALEDB_PASSWORD:-changeme}
+  #     POSTGRES_DB: ${TIMESCALEDB_NAME:-trading_db}
+  #   ports:
+  #     - "127.0.0.1:5432:5432"   # Bind to localhost only — not exposed publicly
+  #   volumes:
+  #     - timescaledb_data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   # Security hardening
+  #   tmpfs:
+  #     - /tmp:noexec,nosuid
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   cap_drop:
+  #     - ALL
+  #   cap_add:
+  #     - CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${TIMESCALEDB_USER:-engine}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - db_engine_net
+
+networks:
+  db_engine_net:
+    driver: bridge
 
 volumes:
-  timescaledb_data:
+  # timescaledb_data:   # Uncomment if enabling TimescaleDB above

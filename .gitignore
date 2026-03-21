@@ -1,9 +1,9 @@
-# Environment variables
-.env
+# Environment variables — NOTE: .env IS committed to git (private repo, VPS-only deployment).
+# Secrets are protected by:
+#   - .dockerignore: excludes .env from Docker image layers
+#   - docker-compose.yml: mounts .env as a volume into containers
+#   - VPS firewall: only ports 22, 80, 443 are open to the internet
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # Python
 __pycache__/

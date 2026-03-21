@@ -1,0 +1,34 @@
+# ── Secrets: mount via docker-compose volume instead of baking into image ────────────
+# .env is committed to git (private repo, VPS-only). It is excluded here so
+# credentials never appear in Docker image layers (prevents leakage via `docker history`).
+.env
+.env.local
+.env.production
+
+# ── Python build artifacts ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+venv/
+.eggs/
+env/
+
+# ── OS / IDE noise ─────────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Logs & data (use named volumes in production) ───────────────────────────────
+*.log
+logs/
+timescale_data/
+
+# ── Git (not needed inside container) ────────────────────────────────────────────
+.git/
+.gitignore
