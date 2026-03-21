@@ -1,7 +1,7 @@
 import time
 import schedule
 import datetime
-from fetcher.upstox_client import UpstoxFetcher
+from fetcher import create_fetcher
 from processor.indicator_engine import CalculationEngine
 from database.supabase_client import RemoteDBWatcher
 
@@ -50,7 +50,7 @@ def run_5min_sync_job():
     print(f"--- Starting Sync Job at {datetime.datetime.now()} ---")
     
     # 1. Initialize Modules
-    fetcher = UpstoxFetcher()
+    fetcher = create_fetcher()
     processor = CalculationEngine()
     supabase = RemoteDBWatcher()
     
