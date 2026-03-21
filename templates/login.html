@@ -12,7 +12,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 0 24px 24px 24px;
   gap: 24px;
 }
 .login-logo {
@@ -83,26 +83,29 @@
 </style>
 {% endblock %}
 
-<div class="login-logo">
-  <div class="login-logo-mark"></div>
-  <span class="login-logo-text">Data Engine</span>
-</div>
-
 {% block content %}
 <div class="login-page">
+  <div class="login-logo">
+    <div class="login-logo-mark"></div>
+    <span class="login-logo-text">Data Engine</span>
+  </div>
+
   <div class="login-card">
     <h1 class="login-heading">Sign in</h1>
 
     {% if error %}
-    <div style="background:#ef444420;border:1px solid #ef4444;border-radius:8px;padding:10px 14px;color:#ef4444;font-size:12px;margin-bottom:16px;display:flex;align-items:center;gap:8px">
-      <span style="width:6px;height:6px;border-radius:50%;background:#ef4444;flex-shrink:0"></span>
+    <div style="background:color-mix(in srgb, var(--danger) 12%, transparent);border:1px solid var(--danger);border-radius:8px;padding:10px 14px;color:var(--danger);font-size:12px;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--danger);flex-shrink:0"></span>
       {{ error }}
     </div>
     {% endif %}
 
     <form action="/auth/login" method="POST">
-      <input type="text" name="username" class="login-input" placeholder="Username" required>
-      <input type="password" name="password" class="login-input" placeholder="Password" required>
+      {% csrf_token %}
+      <label for="username" style="color: var(--muted); font-size: 12px; display: block; margin-bottom: 6px;">Username</label>
+      <input type="text" name="username" class="login-input" id="username" placeholder="Username" required>
+      <label for="password" style="color: var(--muted); font-size: 12px; display: block; margin-bottom: 6px;">Password</label>
+      <input type="password" name="password" class="login-input" id="password" placeholder="Password" required>
       <button type="submit" class="login-btn">Sign In</button>
     </form>
   </div>
