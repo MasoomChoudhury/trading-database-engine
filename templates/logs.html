@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}Logs — Data Engine{% endblock %}
+
+{% block styles %}
+<style>
+.logs-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 48px);
+}
+.logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 12px;
+}
+.logs-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.logs-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.logs-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.logs-toggle input { cursor: pointer; accent-color: var(--accent); }
+.logs-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  transition: all 0.15s;
+}
+.logs-btn:hover { border-color: var(--hover); color: var(--text); }
+.logs-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.logs-container {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 12px 16px;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.log-line {
+  display: flex;
+  gap: 10px;
+  padding: 1px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.log-time { color: var(--dim); flex-shrink: 0; }
+.log-level { flex-shrink: 0; font-weight: 600; width: 48px; }
+.log-level.INFO { color: var(--muted); }
+.log-level.WARN { color: var(--warning); }
+.log-level.ERROR { color: var(--danger); }
+.log-level.DEBUG { color: var(--dim); }
+.log-msg { color: #a1a1aa; flex: 1; }
+.log-msg.ERROR { color: var(--danger); }
+.log-loading {
+  color: var(--dim);
+  text-align: center;
+  padding: 32px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="tab-logs" class="tab-content active">
+  <div class="logs-page">
+    <div class="logs-header">
+      <div class="logs-title">Engine Logs</div>
+      <div class="logs-controls">
+        <label class="logs-toggle">
+          <input type="checkbox" id="auto-scroll" checked>
+          Auto-scroll
+        </label>
+        <button class="logs-btn" onclick="loadLogs()">Refresh</button>
+        <button class="logs-btn" onclick="downloadLogs()">Download</button>
+      </div>
+    </div>
+    <div class="logs-body">
+      <div class="logs-container" id="logs-container">
+        <div class="log-loading">Loading logs...</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// State
+let rawLogText = '';
+let autoScroll = true;
+
+// Load logs from /admin/logs
+async function loadLogs() {
+  const container = document.getElementById('logs-container');
+  container.innerHTML = '<div class="log-loading">Loading logs...</div>';
+  try {
+    const resp = await fetch('/admin/logs');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    rawLogText = await resp.text();
+    renderLogs(rawLogText);
+  } catch (e) {
+    container.innerHTML = '<div class="log-loading" style="color:var(--danger)">Failed to load logs: ' + e.message + '</div>';
+  }
+}
+
+// Render raw log text as structured lines
+function renderLogs(text) {
+  const container = document.getElementById('logs-container');
+  const lines = text.split('\n');
+  const timeMatch = /(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})/.source;
+  const levelMatch = /\b(INFO|WARN|WARNING|ERROR|DEBUG)\b/.source;
+
+  container.innerHTML = lines.map(line => {
+    if (!line.trim()) return '';
+
+    // Try to extract timestamp
+    let time = '';
+    let level = '';
+    let msg = line;
+
+    const timeRegex = new RegExp(timeMatch);
+    const timeMatchResult = timeRegex.exec(line);
+    if (timeMatchResult) {
+      time = timeMatchResult[1];
+      msg = line.slice(timeMatchResult.index + timeMatchResult[0].length).trim();
+    }
+
+    const levelRegex = new RegExp(levelMatch);
+    const levelMatchResult = levelRegex.exec(msg);
+    if (levelMatchResult) {
+      level = levelMatchResult[1].replace('WARNING', 'WARN');
+      msg = msg.slice(0, levelMatchResult.index) + msg.slice(levelMatchResult.index + levelMatchResult[0].length);
+    }
+
+    return `<div class="log-line">
+      <span class="log-time">${escapeHtml(time)}</span>
+      <span class="log-level ${level}">${level || '—'}</span>
+      <span class="log-msg${level === 'ERROR' ? ' ERROR' : ''}">${escapeHtml(msg.trim())}</span>
+    </div>`;
+  }).join('');
+
+  if (autoScroll) scrollToBottom();
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Auto-scroll to bottom
+function scrollToBottom() {
+  const container = document.getElementById('logs-container');
+  if (container) container.scrollTop = container.scrollHeight;
+}
+
+// Download logs as text file
+function downloadLogs() {
+  if (!rawLogText) return;
+  const blob = new Blob([rawLogText], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.href = url;
+  a.download = 'engine-logs-' + ts + '.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Auto-scroll toggle
+document.addEventListener('DOMContentLoaded', () => {
+  const checkbox = document.getElementById('auto-scroll');
+  checkbox?.addEventListener('change', (e) => {
+    autoScroll = e.target.checked;
+    if (autoScroll) scrollToBottom();
+  });
+
+  // Load on tab show
+  loadLogs();
+
+  // Refresh every 30s
+  setInterval(loadLogs, 30_000);
+});
+</script>
+{% endblock %}
