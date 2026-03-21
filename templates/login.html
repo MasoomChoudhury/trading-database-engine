@@ -101,7 +101,6 @@
     {% endif %}
 
     <form action="/auth/login" method="POST">
-      {% csrf_token %}
       <label for="username" style="color: var(--muted); font-size: 12px; display: block; margin-bottom: 6px;">Username</label>
       <input type="text" name="username" class="login-input" id="username" placeholder="Username" required>
       <label for="password" style="color: var(--muted); font-size: 12px; display: block; margin-bottom: 6px;">Password</label>

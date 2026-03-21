@@ -122,13 +122,6 @@ async def save_config(request: Request, user: str = Depends(get_current_user)):
     if not user:
         return HTMLResponse("Unauthorized", status_code=401)
 
-    # CSRF check — reject requests from other origins
-    referer = request.headers.get("referer", "")
-    origin = request.headers.get("origin", "")
-    host = request.headers.get("host", "")
-    if origin and origin not in ["http://" + host, "https://" + host]:
-        return HTMLResponse("<span style='color:#ef4444'>Invalid origin</span>", status_code=403)
-
     try:
         form_data = await request.form()
         content = form_data.get("config_content")

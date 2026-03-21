@@ -1,0 +1,83 @@
+<h2>Design Summary</h2>
+<p class="subtitle">Here's the complete design direction — confirm to proceed to implementation</p>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+
+  <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:16px">
+    <div style="color:#8b5cf6;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;font-weight:600">Aesthetic</div>
+    <div style="color:#fff;font-weight:600;margin-bottom:4px">Minimal Dark</div>
+    <div style="color:#52525b;font-size:11px;line-height:1.6">
+      Near-black zinc palette, ultra-clean surfaces,<br>
+      generous spacing. Like Vercel / Linear.
+    </div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:6px">
+      <div style="width:8px;height:8px;border-radius:50%;background:#8b5cf6;box-shadow:0 0 8px #8b5cf680"></div>
+      <div style="color:#71717a;font-size:10px">Accent: Violet (#8b5cf6)</div>
+    </div>
+  </div>
+
+  <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:16px">
+    <div style="color:#8b5cf6;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;font-weight:600">Layout</div>
+    <div style="color:#fff;font-weight:600;margin-bottom:4px">Top Navigation</div>
+    <div style="color:#52525b;font-size:11px;line-height:1.6">
+      Tabs across the top. Full content area.<br>
+      Mobile-friendly, no sidebar taking space.
+    </div>
+    <div style="margin-top:10px;display:flex;gap:4px">
+      <div style="padding:2px 8px;background:#8b5cf6;border-radius:4px;font-size:9px;color:#fff">Dashboard</div>
+      <div style="padding:2px 8px;background:#27272a;border-radius:4px;font-size:9px;color:#71717a">Config</div>
+      <div style="padding:2px 8px;background:#27272a;border-radius:4px;font-size:9px;color:#71717a">Maintenance</div>
+      <div style="padding:2px 8px;background:#27272a;border-radius:4px;font-size:9px;color:#71717a">Logs</div>
+    </div>
+  </div>
+
+  <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:16px">
+    <div style="color:#8b5cf6;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;font-weight:600">Dashboard</div>
+    <div style="color:#fff;font-weight:600;margin-bottom:4px">Compact Strip + Full Chart</div>
+    <div style="color:#52525b;font-size:11px;line-height:1.6">
+      Thin status bar across top (NIFTY price, DB, sync time)<br>
+      followed by full-height TradingView chart.
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <div style="padding:2px 8px;background:#27272a;border-radius:4px;font-size:9px;color:#71717a">Alert Feed</div>
+      <div style="padding:2px 8px;background:#27272a;border-radius:4px;font-size:9px;color:#71717a">Quick Actions</div>
+    </div>
+  </div>
+
+  <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:16px">
+    <div style="color:#8b5cf6;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;font-weight:600">Config Tab</div>
+    <div style="color:#fff;font-weight:600;margin-bottom:4px">Full .env Editor</div>
+    <div style="color:#52525b;font-size:11px;line-height:1.6">
+      Syntax-highlighted textarea for raw .env editing,<br>
+      save button with Docker restart trigger.
+    </div>
+  </div>
+
+  <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:16px">
+    <div style="color:#8b5cf6;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;font-weight:600">Maintenance Tab</div>
+    <div style="color:#fff;font-weight:600;margin-bottom:4px">Pruning + Audit</div>
+    <div style="color:#52525b;font-size:11px;line-height:1.6">
+      Real chunk analysis, gap audit results,<br>
+      OAuth re-auth button.
+    </div>
+  </div>
+
+  <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:16px">
+    <div style="color:#8b5cf6;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;font-weight:600">Logs Tab</div>
+    <div style="color:#fff;font-weight:600;margin-bottom:4px">Live Engine Output</div>
+    <div style="color:#52525b;font-size:11px;line-height:1.6">
+      Streaming log feed pulled from<br>
+      <code style="color:#8b5cf6;font-size:10px">docker compose logs -f</code>
+    </div>
+  </div>
+
+</div>
+
+<p style="margin-top:16px;font-size:11px;color:#52525b;text-align:center;line-height:1.6">
+  Click <strong style="color:#fff">Approve</strong> below to proceed to implementation, or <strong style="color:#fff">Request Changes</strong> to revise a section.
+</p>
+
+<div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
+  <div style="padding:8px 24px;background:#27272a;border-radius:8px;font-size:12px;color:#71717a;cursor:pointer" onclick="toggleSelect(this)">Request Changes</div>
+  <div style="padding:8px 24px;background:#8b5cf6;border-radius:8px;font-size:12px;color:#fff;font-weight:600;cursor:pointer" onclick="toggleSelect(this)" data-choice="approved">Approve & Implement</div>
+</div>

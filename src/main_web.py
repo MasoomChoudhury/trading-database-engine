@@ -15,10 +15,10 @@ app = FastAPI(title="Database Engine Admin")
 
 # Security Middleware
 app.add_middleware(
-    SessionMiddleware, 
+    SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "super-secret-key"),
     session_cookie="admin_session",
-    max_age=3600 * 24 # 24 hours
+    max_age=3600 * 24,  # 24 hours
 )
 
 # Static Files & Templates

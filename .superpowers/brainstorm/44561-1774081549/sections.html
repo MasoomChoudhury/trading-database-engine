@@ -1,0 +1,43 @@
+<h2>Navigation Sections</h2>
+<p class="subtitle">What sections should appear in the top navigation tabs?</p>
+
+<div class="options">
+  <div class="option" data-choice="minimal-sections" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Minimal — 2 Tabs</h3>
+      <p>Everything on one page. Top nav just for branding + user menu. Keeps it simple and focused.</p>
+      <div style="display:flex;gap:4px;margin-top:8px">
+        <div style="padding:3px 10px;background:#27272a;border-radius:4px;font-size:9px;color:#a1a1aa">Dashboard</div>
+        <div style="padding:3px 10px;border-radius:4px;font-size:9px;color:#52525b;border:1px dashed #27272a">Settings</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="three-sections" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Three Tabs</h3>
+      <p>Dashboard for live monitoring, Configuration for .env/token management, Maintenance for pruning and audit.</p>
+      <div style="display:flex;gap:4px;margin-top:8px">
+        <div style="padding:3px 10px;background:#3b82f6;border-radius:4px;font-size:9px;color:#fff">Dashboard</div>
+        <div style="padding:3px 10px;border-radius:4px;font-size:9px;color:#52525b;border:1px dashed #27272a">Config</div>
+        <div style="padding:3px 10px;border-radius:4px;font-size:9px;color:#52525b;border:1px dashed #27272a">Maintenance</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="four-sections" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Four Tabs</h3>
+      <p>Adds a dedicated Logs tab for live engine output. Useful for debugging without touching the VPS terminal.</p>
+      <div style="display:flex;gap:4px;margin-top:8px">
+        <div style="padding:3px 10px;background:#3b82f6;border-radius:4px;font-size:9px;color:#fff">Dashboard</div>
+        <div style="padding:3px 10px;border-radius:4px;font-size:9px;color:#52525b;border:1px dashed #27272a">Config</div>
+        <div style="padding:3px 10px;border-radius:4px;font-size:9px;color:#52525b;border:1px dashed #27272a">Maintenance</div>
+        <div style="padding:3px 10px;border-radius:4px;font-size:9px;color:#52525b;border:1px dashed #27272a">Logs</div>
+      </div>
+    </div>
+  </div>
+</div>
